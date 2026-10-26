@@ -88,7 +88,10 @@ flowchart TD
     EURMAT -.-> PPWD
     PPWD --> MEXP
     CIC --> CLS
+    CIC --> MEXP
     CLS --> MEXP
+    TENOR --> MEXP
+    INIT --> MEXP
 
     V2 --> INIT
     V2 --> CLSS
@@ -120,6 +123,7 @@ flowchart TD
     CPP -.-> MEXK
 
     SETUP -.-> SCRIPTS
+    SETUP -.-> CMFE
 ```
 
 ## Filer
