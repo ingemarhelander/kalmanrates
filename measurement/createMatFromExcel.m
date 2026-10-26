@@ -1,3 +1,5 @@
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
+
 % function createMatFromExcel(fileName)
 % fileName = 'CHF.xlsx';
 fileName = 'EUR.xlsx';
