@@ -1,8 +1,4 @@
-measurementPath = '.\measurement';
-% measurementPath = 'Z:\prog\XiFinPortfolio\matlab\measurement';
-% measurementPath = '/home/jorbl45/axel/jorbl45/prog/XiFinPortfolio/matlab/measurement';
-
-addpath(measurementPath)
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 
 p = 100;
 
@@ -439,10 +435,8 @@ firstDates = firstDates(indKeep);
 lastDates = lastDates(indKeep);
 
 
-strTemp=[fileName int2str(p) '.mat'];
+strTemp=dataPath([fileName int2str(p) '.mat']);
 save(strTemp,'times', 'firstDates', 'lastDates', 'fH', 'piH', 'ricAll', 'pl', 'assetTypeAll', 'yieldH', 'zH', 'theoreticalPriceH', 'theoreticalMarketQuotePriceH', 'marketQuotePriceBidH', 'marketQuotePriceAskH', 'marketQuotePriceMidH', 'lastInterestDatesH')
-
-rmpath(measurementPath)
 
 
 

@@ -20,6 +20,10 @@ fileName = 'EUR.xlsx';
 % fileName = 'USDZAR.xlsx';
 % fileName = 'EUA.xlsx';
 
+k = strfind(fileName, '.');
+fileNameMatlab = dataPath(fileName(1:k(end)-1)); % Output .mat is saved in data/
+fileName = dataPath('raw', fileName);            % Excel files are read from data/raw/
+
 [type, sheetNames]=xlsfinfo(fileName);
 
 i = 1; % Counter to deal with AFOSHEET
@@ -57,9 +61,6 @@ for k = 1:length(sheetNames)
   end
   i = i+1;
 end
-
-k = strfind(fileName, '.');
-fileNameMatlab = fileName(1:k(end)-1);
 
 save(fileNameMatlab, 'sheet', 'ric', 'dates', 'data', 'sheetNames');
 

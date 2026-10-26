@@ -1,6 +1,8 @@
 % Ricatti recursion - Solves optimization problem for non-linear Rauch-Tung-Striebel smoother
 % Also generates data (K, KI) that is used for other Kalman filters.
 
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
+
 runReducedIrCurvesInit;
 
 runReducedIrCurvesCls;
@@ -42,7 +44,7 @@ toc
 end
 
 axRtsOpt = K.x{1};
-save('axRtsOpt', 'axRtsOpt')
+save(dataPath('axRtsOpt.mat'), 'axRtsOpt')
 
 %% Display solution
 
@@ -97,7 +99,7 @@ legend('Market implied policy rate', 'ECB policy rate')
 set(gcf,'Units','Inches');
 pos = get(gcf,'Position');
 set(gcf,'PaperPositionMode','Auto','PaperUnits','Inches','PaperSize',[pos(3),pos(4)]);
-saveas(gcf,'ecbCutsHikes.pdf')
+saveas(gcf, fullfile(fileparts(mfilename('fullpath')), '..', 'docs', 'ecbCutsHikes.pdf'))
 
 
 pause(0.01);

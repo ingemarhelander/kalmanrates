@@ -30,7 +30,7 @@ pl.atFX  = mexPortfolio('assetTypeCode', 'FX');          % FxSpot - Stores price
 pl.atCommodity  = mexPortfolio('assetTypeCode', 'Commodity'); % Commodity - Stores price history for Commodity
 pl.atFutureCommodity  = mexPortfolio('assetTypeCode', 'FutureCommodity'); % FutureCommodity - Stores price history for Future Commodity
 
-load([fileName '.mat']); % File created by createMatFromExcel
+load(dataPath([fileName '.mat'])); % File created by createMatFromExcel
 
 % ric{3} = {};
 % dates{3} = 

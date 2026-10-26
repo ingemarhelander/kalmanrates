@@ -1,6 +1,4 @@
-measurementPath = '.\measurement';
-
-addpath(measurementPath)
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 
 p = 100;
 nSteps = 16; % Number of steps to model cuts/hikes from the central bank
@@ -21,13 +19,13 @@ if (currency == 'EUR')
   nY = 10; % Number of years the curves span
 %   times = times(times>= datenum(2005,08,15));
 
-  load EUR100;
+  load(dataPath('EUR100.mat'));
   outOfSampleStartDate = datenum(2020,1,1);
   
   if verLessThan('matlab', '9.7') % Not clear when change was made, need to run next line at least for version 9.6
-    cb = readtable("datesEURECB.xlsx", "Sheet", "mHistory");
+    cb = readtable(dataPath('raw', 'datesEURECB.xlsx'), "Sheet", "mHistory");
   else  
-    cb = readtable("datesEURECB.xlsx", "Sheet", "mHistory",'Format','auto');
+    cb = readtable(dataPath('raw', 'datesEURECB.xlsx'), "Sheet", "mHistory",'Format','auto');
   end
   
   cbEffectiveDates = datenum(cb.StartDateImplied_assumeThursday_);

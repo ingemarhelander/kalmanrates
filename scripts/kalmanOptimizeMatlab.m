@@ -1,4 +1,6 @@
-load kalmanDebug.mat;
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
+
+load(dataPath('kalmanDebug.mat'));
 thetaFInd = (1:length(K.thetaF));
 SigmavInd = (1:length(K.Sigmav))+thetaFInd(end);
 SigmawInd = (1:length(K.Sigmaw))+SigmavInd(end);
@@ -6,7 +8,7 @@ axInd = (1:length(K.ax))+SigmawInd(end);
 Sigma0Ind = (1:length(K.Sigma0))+axInd(end);
 EfVecInd = (1:length(K.Ef(:)))+Sigma0Ind(end);
 
-load kalmanXoptAll.mat;
+load(dataPath('kalmanXoptAll.mat'));
 x = xOptAll(:,end);
 
 % Generated xOptAll(:,3)
