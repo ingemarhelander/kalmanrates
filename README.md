@@ -12,6 +12,24 @@ Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter. F
    De ignoreras av git och ska inte laddas upp på GitHub pga storlek.
 3. Kör skripten i `scripts/`, t.ex. `runReducedIrCurvesV2`. Varje skript anropar `setupPaths` automatiskt, som lägger alla projektmappar på MATLAB-sökvägen. Om du kör delar av koden manuellt, kör `setupPaths` först.
 
+
+## Koppla till remote datorn
+OBS Endast en person kan använda datorn åt gången.
+
+Instruktion för att ansluta till datorn med tillgång till din vanliga repository.
+1. Klicka windows + r och öppna mstcs
+2. Skriv in simhall3-001.ad.liu.se
+3. Klicka Show Options
+4. Klicka Local Resources
+5. Klicka More
+6. Under Drives - välj Windows (C:) och klicka OK
+7. Klicka Connect och logga in
+
+Flytta över en fil:
+1. På remote datorn öppna File explorer
+2. Under This PC ska det finnas en som heter C on "Datornamn"
+3. Dra enkelt över filerna dit du vill ha dem.
+
 ## Struktur
 
 ```
