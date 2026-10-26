@@ -26,6 +26,106 @@ kalmanrates/
 └── docs/            dokument och figurer
 ```
 
+## Hur filerna hänger ihop
+
+Heldragna pilar = anrop, streckade pilar = läser/sparar data.
+
+```mermaid
+flowchart TD
+    subgraph DATA["data/"]
+        XLSX["raw/EUR.xlsx"]
+        ECB["raw/datesEURECB.xlsx"]
+        EURMAT[("EUR.mat")]
+        EUR100[("EUR100.mat")]
+        KDEBUG[("kalmanDebug.mat")]
+        XOPT[("kalmanXoptAll.mat")]
+        AXRTS[("axRtsOpt.mat")]
+    end
+
+    subgraph MEAS["measurement/"]
+        CMFE["createMatFromExcel.m"]
+        PPWD["populatePortfolioWithData.m"]
+        CIC["createInstrumentsClasses.m"]
+        CLS["cls*.m<br/>OIS, IBOR, IRS, FRA,<br/>FxSwap, FutureIR, ..."]
+    end
+
+    subgraph MEX["mex/"]
+        MEXP[["mexPortfolio.mexw64"]]
+        MEXK[["mexKalmanLogLikelihood.mexw64"]]
+        CPP["mexKalmanLogLikelihood.cpp<br/>kalmanLogLikelihoodAd.h<br/>sparseMatrix.h"]
+        COMP["compileMex.m"]
+    end
+
+    subgraph MODEL["model/"]
+        MI["marketInfo.m"]
+        PCA["pcaIRS.m"]
+        KIR["clsKalmanIr.m"]
+        TAY["taylorInstrPC.m"]
+        KSUB["kalmanSub.m"]
+        KOBJ["kalmanObj.m"]
+        KOBJMIN["kalmanObjMin.m"]
+    end
+
+    subgraph SCRIPTS["scripts/"]
+        TENOR["runTenorMultiIrCurves.m"]
+        V2["runReducedIrCurvesV2.m<br/>huvudskript"]
+        INIT["runReducedIrCurvesInit.m"]
+        CLSS["runReducedIrCurvesCls.m"]
+        OPTM["kalmanOptimizeMatlab.m<br/>fmincon"]
+        OPTSD["kalmanOptimizeSD.m<br/>brantaste lutning"]
+    end
+
+    SETUP{{"setupPaths.m + dataPath.m"}}
+    PDF["docs/ecbCutsHikes.pdf"]
+
+    XLSX -.-> CMFE -.->|sparar| EURMAT
+
+    TENOR --> MI
+    TENOR --> PPWD
+    TENOR --> CIC
+    TENOR -.->|sparar| EUR100
+
+    EURMAT -.-> PPWD
+    PPWD --> MEXP
+    CIC --> CLS
+    CIC --> MEXP
+    CLS --> MEXP
+    TENOR --> MEXP
+    INIT --> MEXP
+
+    V2 --> INIT
+    V2 --> CLSS
+    V2 --> MEXK
+    V2 --> KSUB
+    V2 -.->|sparar| AXRTS
+    V2 -.->|sparar| PDF
+
+    INIT --> MI
+    INIT --> PCA
+    INIT --> PPWD
+    INIT --> CIC
+    EUR100 -.-> INIT
+    ECB -.-> INIT
+
+    CLSS --> KIR
+    KIR --> TAY
+    KSUB --> KIR
+
+    KDEBUG -.-> OPTM
+    KDEBUG -.-> OPTSD
+    XOPT -.-> OPTM
+    XOPT -.-> OPTSD
+    OPTM --> KOBJMIN --> KOBJ
+    OPTSD --> KOBJ
+    KOBJ --> MEXK
+
+    COMP -.->|kompilerar| CPP
+    CPP -.-> MEXK
+
+    SETUP -.-> SCRIPTS
+    SETUP -.-> CMFE
+```
+
 ## Filer
 
 **scripts/**
