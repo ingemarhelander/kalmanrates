@@ -17,7 +17,7 @@ Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter.
 OBS Endast en person kan använda datorn åt gången.
 
 Instruktion för att ansluta till datorn med tillgång till din vanliga repository.
-1. Klicka windows + r och öppna mstcs
+1. Klicka windows + r och öppna mstcs (Om den inte hittas prova att söka på fjärrskrivbordsanslutning / Remote desktop connection i sök på datorn)
 2. Skriv in simhall3-001.ad.liu.se
 3. Klicka Show Options
 4. Klicka Local Resources
