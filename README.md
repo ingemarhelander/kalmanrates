@@ -1,6 +1,6 @@
 # Kalmanrates
 
-Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter. Forwardkurvan = PCA-faktorer + trappsteg vid ECB:s räntemöten. Parametrar skattas med maximum likelihood, gradienten beräknas med automatisk differentiering i C++.
+Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter.
 
 ## Kom igång
 
