@@ -9,8 +9,8 @@ Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter.
    - `.mat`-filerna läggs i `data/`
    - `.mexw64`-filerna läggs i `mex/`
 
-   De ignoreras av git och ska inte laddas upp på GitHub pga storlek.
-3. Kör skripten i `scripts/`, t.ex. `runReducedIrCurvesV2`. Varje skript anropar `setupPaths` automatiskt, som lägger alla projektmappar på MATLAB-sökvägen. Om du kör delar av koden manuellt, kör `setupPaths` först.
+   De ignoreras av git och ska inte laddas upp på GitHub pga storlek (behövs bara göras en gång).
+3. Testa kör skripten i `scripts/`, t.ex. `runReducedIrCurvesV2`. Varje skript anropar `setupPaths` automatiskt, som lägger alla projektmappar på MATLAB-sökvägen. Om du kör delar av koden manuellt, kör `setupPaths` först.
 
 
 ## Koppla till remote datorn
