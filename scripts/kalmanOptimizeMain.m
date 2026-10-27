@@ -3,6 +3,9 @@
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
+
+addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
+
 [K, mu, maxIter, varInd, xLbd, x] = setup_problem();
 noisy_size = 3; % Dimension of noisy subspace
 [f, g] = kalmanObj(x, K, mu, varInd);
@@ -46,79 +49,6 @@ end
 
 %% ------------------------------ Functions -------------------------------
 
-
-function d = find_search_direction(x, g, xLbd)
-% Steepest ascent direction, shortened so that a full step (alpha = 1)
-% stays inside the lower bounds.
-
-    d = g;
-
-    if g'*d < 0
-        fprintf('This is not an ascent direction\n');
-    end
-
-    % Largest step length (along d) before each variable hits its lower bound
-    alphaLbd = ones(size(x))*inf;
-    hitsBound = (d < 0) & (xLbd ~= -inf);
-    alphaLbd(hitsBound) = -(x(hitsBound) - xLbd(hitsBound)) ./ d(hitsBound);
-
-    alphaLbdMin = min(alphaLbd);
-    if alphaLbdMin < 1
-        d = d*alphaLbdMin*0.99;   % Ensures that alpha = 1 is feasible
-    end
-
-    if any(isnan(d))
-        error('Search direction contains NaN');
-    end
-end
-
-
-function [alpha, xNew, fNew, gNew] = line_search(x, f, g, d, K, mu, varInd)
-% Backtracking line search: start with a (capped) step, halve until the
-% objective improves or the maximum number of halvings is reached.
-
-    maxLsIter = 50;
-
-    alpha = initial_step_length(g, d);
-
-    xNew = x + alpha*d;
-    [fNew, gNew] = kalmanObj(xNew, K, mu, varInd);
-    lsIter = 1;
-
-    while true
-        dfNew = gNew'*d;
-        print_line_search(lsIter, alpha, fNew, f, dfNew)
-
-        isBetter = fNew > f;
-        if isBetter
-            break;
-        end
-
-        alpha = alpha/2;
-        xNew = x + alpha*d;
-        [fNew, gNew] = kalmanObj(xNew, K, mu, varInd);
-
-        lsIter = lsIter + 1;
-        if lsIter > maxLsIter
-            break;
-        end
-    end
-end
-
-
-function alpha = initial_step_length(g, d)
-% Steps are far too long in the beginning, so cap the step such that the
-% predicted (linear) increase in the objective is at most objInc.
-
-    objInc   = 1E2;
-    alphaMin = 1E-5;
-
-    alpha = 1;
-    alphaObjInc = objInc/(g'*d);
-    alpha = min(alpha, alphaObjInc);
-    alpha = max(alpha, alphaMin);
-end
-
 function stop = fulfills_stop_criterion(g, iter, maxIter)
 % Stop when the gradient is small or the iteration limit is reached.
 
@@ -132,29 +62,11 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
     end
 end
 
-
 function print_iteration(iter, alpha, f, fNew, g, gNew)
     fprintf('Main loop iteration %3d: alpha = %14d, fNew-fPrev = %14f, fNew = %14f, norm of gPrev = %14d, norm of gNew = %14d\n', ...
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
-function print_line_search(lsIter, alpha, fNew, f, dfNew)
-    fprintf('LS iteration %2d: alpha = %12d, fvalNew-fval = %12f, dfNew = %12d\n', lsIter, alpha, fNew-f, dfNew);
-
-    if isnan(fNew)
-        fprintf('Warning: objective is NaN in line search\n');
-    end
-end
-
-function [x, f, g] = noisy_optimization(x, f, g, D, noisy_size, K, mu, varInd, xLbd)
-% Placeholder: returns x, f, g unchanged.
-    fprintf('\nNoisy optimization: last %d search directions', noisy_size);
-end
-
-
-%% Help function we will probably not need to touch much.
-
-%Denna har claude skrivit så kanske måste testas
 function D = store_direction(D, d, noisy_size)
 % Keeps only the noisy_size most recent search directions (one per column).
 
@@ -163,6 +75,8 @@ function D = store_direction(D, d, noisy_size)
         D = D(:, end-noisy_size+1:end);
     end
 end
+
+%% Help function given by Jörgen.
 
 function [K, mu, maxIter, varInd, xLbd, x] = setup_problem()
 % Loads data, sets the starting point, selects which variables to optimize
