@@ -41,31 +41,5 @@ if (false)
   K.Sigma0 = x(Sigma0Ind);
 end
 
-if (false) % Reduce size
-  nt = 100;
-  times = times(1:nt);
-  indInstrAll = indInstrAll(1:nt);
-  priceAll = priceAll(1:nt);
-  atAll = atAll(1:nt);
-  oAll = oAll(1:nt);
-  oTAll = oTAll(1:nt);
-  oIndAll = oIndAll(1:nt);
-  tcAll = tcAll(1:nt);
-  datesStepRelAll = datesStepRelAll(1:nt);
-end
-
-if (false) % Reduce size using last data points
-  nt = 1000;
-  times = times(end-nt:end);
-  indInstrAll = indInstrAll(end-nt:end);
-  priceAll = priceAll(end-nt:end);
-  atAll = atAll(end-nt:end);
-  oAll = oAll(end-nt:end);
-  oTAll = oTAll(end-nt:end);
-  oIndAll = oIndAll(end-nt:end);
-  tcAll = tcAll(end-nt:end);
-  datesStepRelAll = datesStepRelAll(end-nt:end);
-end
-
 K = clsKalmanIr(times, xpInit, indInstrAll, usedInstr, priceAll, pl, atAll, oAll, oTAll, oIndAll, tcAll, nSteps, datesStepRelAll, cbEffectiveDates, thetaF, Sigmaw, Sigmav, Sigmax, ax, Sigma0, Ef);
-% save('kalmanDebug', 'K', 'KI');
+% save(dataPath(['kalmanDebug' runOutputSuffix '.mat']), 'K', 'KI');

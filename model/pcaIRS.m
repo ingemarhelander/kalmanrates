@@ -1,5 +1,18 @@
 function [fH, piH, lastDates, nIn, ef, Ef, fTotVar, ePi, EPi, piTotVar] = pcaIRS(times, fH, piH, firstDates, lastDates, outOfSampleStartDate)
 
+nEigs = 6;
+nIn = sum(times < outOfSampleStartDate);
+if nIn < nEigs+2
+  error('kalmanrates:InsufficientPcaHistory', ...
+        'At least %d in-sample observations are required for six principal components.', nEigs+2);
+end
+fprintf('In-sample range: %s to %s\n', datestr(floor(times(1))), datestr(floor(times(nIn))))
+if nIn < numel(times)
+  fprintf('Out-of-sample range: %s to %s\n', datestr(floor(times(nIn+1))), datestr(floor(times(end))))
+else
+  fprintf('Out-of-sample range: none in the selected observations\n');
+end
+
 nD = max(lastDates-firstDates)+5;
 
 % Extrapolate interest rate curves (deals with issue that length varies due to holidays and weekends) - required for performance attribution
@@ -11,16 +24,11 @@ for i = nStartExtrapolate:nD
 end
 lastDates = firstDates + nD;
 
-nIn = length(find(times<outOfSampleStartDate)); % In-sample
-fprintf('In-sample range: %s to %s\n', datestr(floor(times(1))), datestr(floor(times(nIn))))
-fprintf('Out-of-sample range: %s to %s\n', datestr(floor(times(nIn+1))), datestr(floor(times(end))))
-
 nH = min(lastDates-firstDates);
 % r = fH(2:end,1:nH)-fH(1:end-1,1:nH);
 r = fH(2:nIn,1:nH)-fH(1:nIn-1,1:nH);
 r = r - repmat(mean(r, 1), size(r,1), 1);
 C = cov(r);
-nEigs = 6;
 
 [V,D] = eigs(C, nEigs);
 [ef,ind] = sort(diag(D),1, 'descend');

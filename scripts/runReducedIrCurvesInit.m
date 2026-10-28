@@ -1,4 +1,5 @@
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
+runConfig = modelRunConfig();
 
 p = 100;
 nSteps = 16; % Number of steps to model cuts/hikes from the central bank
@@ -19,7 +20,7 @@ if (currency == 'EUR')
   nY = 10; % Number of years the curves span
 %   times = times(times>= datenum(2005,08,15));
 
-  load(dataPath('EUR100.mat'));
+  load(dataPath('EUR100.mat'), 'times', 'fH', 'piH', 'firstDates', 'lastDates');
   outOfSampleStartDate = datenum(2020,1,1);
   
   if verLessThan('matlab', '9.7') % Not clear when change was made, need to run next line at least for version 9.6
@@ -40,34 +41,16 @@ elseif (currency == 'USD')
   times = times(times>= datenum(2012,03,30)); % OIS 3-10Y start on this date
 end
 
-firstDatesPCA = firstDates;
-[fH, piH, lastDatesPCA, nIn, ef, Ef, fTotVar, ePi, EPi, piTotVar] = pcaIRS(times, fH, piH, firstDates, lastDates, outOfSampleStartDate);
-
-nH = min(lastDatesPCA-firstDates);
-C = cov(fH(:,1:nH));
-nEigs = 6;
-
-[V,D] = eigs(C, nEigs);
-[ef,ind] = sort(diag(D),1, 'descend');
-Ef = V(:,ind);
-
-
-
+curveTimes = times;
 if (flgTick)
-  timesD = times;
   fileName = 'irsTickEUREONSW=20200203_20200203frq1s';  
   [pl, times, ric, assetID, assetType, assetTenor, currencies] = populatePortfolioWithDataTick(fileName, mi.currency, mi.currencyTimeZone, mi.iborTimeZone);
-  [~, ind] = min(abs(timesD-times(1)));
-  
-  xpInit = repmat(fH(ind,1:size(Ef,1))*Ef, length(times), 1);
-%   xpInit = zeros(length(times), nEigs);
 else
   fileName = currency;
   % fileName = 'EUR_ICAP';
   % fileName = 'EUR_EONIA';
 
   [pl, times2, ric, assetID, assetType, assetTenor, currencies] = populatePortfolioWithData(fileName, mi.currency, mi.currencyTimeZone, mi.iborTimeZone);
-  xpInit = fH(:,1:size(Ef,1))*Ef;
 end
 
 indOIS = find(strcmp(mi.onTenor, assetTenor) &  pl.atOISG == assetType);
@@ -75,14 +58,54 @@ indIBORON = find(strcmp(mi.onTenor, assetTenor) & pl.atIBOR == assetType);
 % indIBORON = [];
 
 isHoliday = mexPortfolio('isHoliday', mi.onCal, floor(times), floor(times)); % Note that projected holidays may change over time (holidays are added and removed, hence the date when the calendar is defined is important)
-times(isHoliday==1) = []; % Removes all holidays
-
-[timeData, data] = mexPortfolio('getValues', assetID(indIBORON), times(end), mi.iborTimeZone, 'LAST');
-if (floor(timeData) ~= floor(times(end)))
-  times(end) = []; % Remove last day, as the IBOR rate do not exist for this
+keepDates = (isHoliday ~= 1);
+eligibleIndices = find(keepDates);
+if isempty(eligibleIndices)
+  error('kalmanrates:NoObservations', 'No trading days are available.');
 end
 
+if ~isempty(indIBORON)
+  lastIndex = eligibleIndices(end);
+  [timeData, data] = mexPortfolio('getValues', assetID(indIBORON), times(lastIndex), mi.iborTimeZone, 'LAST');
+  if (floor(timeData) ~= floor(times(lastIndex)))
+    keepDates(lastIndex) = false; % The IBOR rate does not exist for this day.
+  end
+end
 
+eligibleIndices = find(keepDates);
+[sampleIndices, runOutputSuffix] = selectObservations(numel(eligibleIndices), ...
+    runConfig.maxObservations, times(eligibleIndices));
+selectedIndices = eligibleIndices(sampleIndices);
+times = times(selectedIndices);
+
+% Select every curve row with the same indices before any PCA allocation.
+if flgTick
+  % Tick observations use the nearest available daily curve for initialization.
+  curveIndices = 1:min(numel(curveTimes), runConfig.maxObservations);
+else
+  curveIndices = selectedIndices;
+end
+curveTimes = curveTimes(curveIndices);
+fH = fH(curveIndices,:);
+piH = piH(curveIndices,:);
+firstDates = firstDates(curveIndices);
+lastDates = lastDates(curveIndices);
+firstDatesPCA = firstDates;
+[fH, piH, lastDatesPCA, nIn, ef, Ef, fTotVar, ePi, EPi, piTotVar] = pcaIRS(curveTimes, fH, piH, firstDates, lastDates, outOfSampleStartDate);
+
+nH = min(lastDatesPCA-firstDates);
+C = cov(fH(:,1:nH));
+nEigs = 6;
+[V,D] = eigs(C, nEigs);
+[ef,ind] = sort(diag(D),1, 'descend');
+Ef = V(:,ind);
+
+if flgTick
+  [~, ind] = min(abs(curveTimes-times(1)));
+  xpInit = repmat(fH(ind,1:size(Ef,1))*Ef, length(times), 1);
+else
+  xpInit = fH(:,1:size(Ef,1))*Ef;
+end
 
 nD = nY*365+10;
 
@@ -241,6 +264,17 @@ for k=1:length(times)
   lastDates(k) = lastDate;
   
 end
+
+% Early samples may omit instruments that appear later in the full history.
+% Map the retained instrument IDs to a dense 1:nu range for sparse matrices.
+instrumentMap = zeros(size(usedInstr));
+instrumentMap(usedInstr) = 1:sum(usedInstr);
+for k=1:length(times)
+  indInstrAll{k} = instrumentMap(indInstrAll{k});
+end
+ricAll = ricAll(usedInstr);
+assetTypeAll = assetTypeAll(usedInstr);
+usedInstr = true(1, sum(usedInstr));
 
 KI.times = times;
 KI.ricAll = ricAll;
