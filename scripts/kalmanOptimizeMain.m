@@ -4,6 +4,7 @@
 
 %% ------------------------------ Main ------------------------------------
 
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 
 [K, mu, maxIter, varInd, xLbd, x] = setup_problem();
@@ -87,13 +88,7 @@ function [K, mu, maxIter, varInd, xLbd, x] = setup_problem()
     % mu = 1E-8;
     mu = 1E-2;
 
-    S = load('kalmanDebug.mat');
-    if isfield(S, 'K')
-        K = S.K;
-    else
-        S = load('kalmanDebugR.mat');
-        K = S.K;
-    end
+    K = loadKalmanSample();
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -104,7 +99,7 @@ function [K, mu, maxIter, varInd, xLbd, x] = setup_problem()
     EfVecInd  = (1:length(K.Ef(:)))  + Sigma0Ind(end);
 
     % Start from the first stored optimum
-    S = load('kalmanXoptAll.mat');
+    S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
     xOpt = S.xOptAll(:,1);
     K.thetaF = xOpt(thetaFInd);
     K.Sigmaw = xOpt(SigmawInd);

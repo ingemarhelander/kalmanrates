@@ -1,11 +1,6 @@
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 
-% load kalmanDebug100.mat;
-load(dataPath('kalmanDebug.mat'));
-if (~exist('K', 'var')) % Only load data once (improves speed)
-  load(dataPath('kalmanDebug.mat'));
-  load(dataPath('kalmanDebugR.mat'));
-end
+[K, runOutputSuffix] = loadKalmanSample();
 
 
 maxIter = 100;
@@ -20,7 +15,7 @@ axInd = (1:length(K.ax))+SigmawInd(end);
 Sigma0Ind = (1:length(K.Sigma0))+axInd(end);
 EfVecInd = (1:length(K.Ef(:)))+Sigma0Ind(end);
 
-load(dataPath('kalmanXoptAll.mat'));
+load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
 x = xOptAll(:,1);
 K.thetaF = x(thetaFInd);
 K.Sigmaw = x(SigmawInd);
