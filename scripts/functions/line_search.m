@@ -4,11 +4,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varIn
 % evals holds every point evaluated in this step (start point included),
 % one per column: evals.X, evals.F, evals.G.
     maxLsIter = 50;
-    evals.X = x;  evals.F = f;  evals.G = g;          % NEW: start point
+    evals.X = x;  evals.F = f;  evals.G = g;
     alpha = initial_step_length(g, d);
     xNew = x + alpha*d;
     [fNew, gNew] = kalmanObj(xNew, K, mu, varInd);
-    evals.X(:, end+1) = xNew;  evals.F(1, end+1) = fNew;  evals.G(:, end+1) = gNew;  % NEW
+    evals.X(:, end+1) = xNew;  evals.F(1, end+1) = fNew;  evals.G(:, end+1) = gNew;
     lsIter = 1;
     while true
         dfNew = gNew'*d;
@@ -20,7 +20,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varIn
         alpha = alpha/2;
         xNew = x + alpha*d;
         [fNew, gNew] = kalmanObj(xNew, K, mu, varInd);
-        evals.X(:, end+1) = xNew;  evals.F(1, end+1) = fNew;  evals.G(:, end+1) = gNew;  % NEW
+        evals.X(:, end+1) = xNew;  evals.F(1, end+1) = fNew;  evals.G(:, end+1) = gNew;
         lsIter = lsIter + 1;
         if lsIter > maxLsIter
             break;
