@@ -11,6 +11,7 @@ noisy_size = 3; % Dimension of noisy subspace
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];          % Last noisy_size search directions (one per column)
+evalHist = {};   % History of line search evaluations
 iter = 1;
 
 while true
@@ -20,11 +21,12 @@ while true
     d = find_search_direction(x, g, xLbd);
 
     %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew] = line_search(x, f, g, d, K, mu, varInd);
+    [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varInd);
 
     %Print and update history
     print_iteration(iter, alpha, f, fNew, g, gNew);
     history.stepSizes(end+1, 1) = alpha;
+    evalHist = store_evals(evalHist, evals, noisy_size); 
 
     %Iteration done, update counter and x f and g
     [x, f, g] = update_step(xNew, fNew, gNew);
@@ -38,7 +40,7 @@ while true
     %Make sure the last search direction is stored and run noisy optimization
     D = store_direction(D, d, noisy_size);
     if iter > noisy_size
-        [x, f, g] = denoise(x, f, g, D, noisy_size, K, mu, varInd, xLbd);
+        [x, f, g] = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd);
     end
 
     %Check if current step fulfills stop criterion.
@@ -73,6 +75,17 @@ function D = store_direction(D, d, noisy_size)
     D = [D, d];
     if size(D, 2) > noisy_size
         D = D(:, end-noisy_size+1:end);
+    end
+end
+
+function evalHist = store_evals(evalHist, evals, noisy_size)
+% Keeps the evaluations (x, f, g) of the noisy_size most recent steps.
+% evalHist{k} belongs to step k of the window (oldest first), so it lines
+% up with the columns of D.
+
+    evalHist{end+1} = evals;
+    if numel(evalHist) > noisy_size
+        evalHist = evalHist(end-noisy_size+1:end);
     end
 end
 
