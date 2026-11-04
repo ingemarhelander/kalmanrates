@@ -26,14 +26,28 @@ Resultat från korta körningar får tillägget `_sample250` (eller valt antal d
 så att de inte skriver över resultaten från en full körning.
 
 Hela datafiler kan fortfarande behöva läsas in innan urvalet görs.
-För att kontrollera ändringen i MATLAB, kör:
+
+## Kontrollera ändringarna
+
+Kör följande på simhall-datorn i MATLAB från projektmappen. Kompileringen kräver
+en C++-kompilator och Jörgens bibliotek; kontrollera `progDir` i `mex/compileMex.m`.
+Spara referensen med den gamla MEX-filen **innan** den kompileras om:
 
 ```matlab
 setupPaths
-results = runtests('tests/testDataLimit.m');
+checkMexRegression('baseline') % Sparar gamla värden och gradienter
+compileMex                    % Bygger den rättade MEX-filen och testhjälparen
+which mexKalmanLogLikelihood -all
+results = runtests('tests');
 assertSuccess(results)
-checkLaptopSample % Testar modellen utan att spara resultat
+checkMexRegression('verify')   % Jämför gamla och nya resultat
+checkLaptopSample             % Testar initiering och ett RTS-steg
 ```
+
+Referensen sparas i `data/adCountReference.mat`. Om den redan har sparats med
+den gamla MEX-filen, hoppa över `baseline`. Den gamla AD-varningen kan visas
+under referenskörningen, men ska försvinna efter omkompileringen.
+Jämförelsen kör 100, 250, 500 och alla dagar oavsett `maxObservations`.
 
 ## Ändringar i Jörgens ursprungliga kod
 
