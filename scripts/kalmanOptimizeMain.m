@@ -38,7 +38,7 @@ while true
     %Make sure the last search direction is stored and run noisy optimization
     D = store_direction(D, d, noisy_size);
     if iter > noisy_size
-        [x, f, g] = noisy_optimization(x, f, g, D, noisy_size, K, mu, varInd, xLbd);
+        [x, f, g] = denoise(x, f, g, D, noisy_size, K, mu, varInd, xLbd);
     end
 
     %Check if current step fulfills stop criterion.
