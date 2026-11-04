@@ -35,27 +35,38 @@ assertSuccess(results)
 checkLaptopSample % Testar modellen utan att spara resultat
 ```
 
-## Bygg om och kontrollera MEX-filen
+## Ändringar i baskoden på denna branch
 
-Gör detta på simhall-datorn med MATLAB, en C++-kompilator och handledarens
-bibliotek. Kontrollera sökvägen `progDir` i `mex/compileMex.m`.
-Spara referensen **innan** den gamla MEX-filen ersätts:
+Baskoden kommer från externt håll. På `issue-1-komprimera-data` har följande
+ändrats för att kunna välja antal dagar och göra mindre körningar på en laptop:
 
-```matlab
-setupPaths
-checkMexRegression('baseline') % Sparar gamla värden och gradienter
-compileMex                    % Bygger modellen och testhjälparen
-which mexKalmanLogLikelihood -all
-results = runtests('tests');
-assertSuccess(results)
-checkMexRegression('verify')   % Jämför 100, 250, 500 och alla dagar
-checkLaptopSample
-```
-
-Referensen sparas i `data/adCountReference.mat` och skrivs inte över.
-Verifieringen kontrollerar även utvalda gradienter med finita differenser för
-250 dagar. Räkna med att hela kontrollen kräver den starkare datorn.
-Den nya `.mexw64`-filen ignoreras av Git och behöver kopieras separat till andra datorer.
+- **Gemensam inställning:** `modelRunConfig.m` styr antalet dagar för både
+  modellinitiering och optimering. Ett positivt heltal väljer de första dagarna;
+  `Inf` använder hela historiken. Standard är 250 dagar.
+- **Tidigare dataurval:** dagarna väljs före PCA och instrumentberäkningarna.
+  Kurvor och datum hålls ihop, och instrumentindex anpassas till instrumenten i
+  urvalet. De gamla avstängda blocken för sent dataurval har tagits bort.
+- **Sparade modeller:** `loadKalmanSample.m` och `limitKalmanObservations.m`
+  kortar alla tidsberoende fält tillsammans. Parameterdimensionerna behålls så
+  att befintliga sparade parametrar fortfarande passar modellen.
+- **Kortare PCA-perioder:** `pcaIRS.m` hanterar urval utan data efter
+  träningsperioden. Minst åtta dagar före träningsgränsen krävs fortfarande
+  (2020-01-01 för EUR).
+- **Rättad AD-räknare:** i `AD_As_bdx::count()` har `n * Av.size()` ersatts
+  med `Av.size()`, eftersom varje lagrat matriselement ger en gradientpost.
+  De fasta korrigeringarna `12323500` och `3799737` har tagits bort eftersom de
+  bara passade en viss datamängd. Felutskriften visar nu faktiskt och beräknat
+  antal separat, utan missvisande osignerade differenser. Minnesreserven behålls.
+- **Uppdaterat MEX-bygge:** projektets lokala AD-header används så att fixen
+  kommer med vid kompilering. `compileMex.m` utgår från sin egen mapp för
+  källfiler och utdata och bygger även testhjälparen. Den nya MEX-filen måste
+  kompileras med MATLAB, en C++-kompilator och handledarens bibliotek.
+- **Separata resultat:** korta körningar får tillägget `_sample250` (eller
+  valt antal dagar), så att resultaten från fulla körningar inte skrivs över.
+- **Nya kontroller:** tester har lagts till för dataurval, PCA och AD-räknaren.
+  `checkMexRegression.m` kan spara referensvärden med den gamla binären före
+  omkompilering och jämföra målfunktion och gradient efteråt för 100, 250, 500
+  och alla dagar. Utvalda gradienter kontrolleras även med finita differenser.
 
 ## Koppla till remote datorn
 OBS Endast en person kan använda datorn åt gången.
