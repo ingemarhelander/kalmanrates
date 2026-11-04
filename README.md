@@ -35,9 +35,9 @@ assertSuccess(results)
 checkLaptopSample % Testar modellen utan att spara resultat
 ```
 
-## Ändringar i baskoden på denna branch
+## Ändringar i Jörgens ursprungliga kod
 
-Baskoden kommer från externt håll. På `issue-1-komprimera-data` har följande
+Den ursprungliga koden kommer från Jörgen. På `issue-1-komprimera-data` har följande
 ändrats för att kunna välja antal dagar och göra mindre körningar på en laptop:
 
 - **Gemensam inställning:** `modelRunConfig.m` styr antalet dagar för både
