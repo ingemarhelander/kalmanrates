@@ -10,7 +10,7 @@
 #include "boost/lexical_cast.hpp"
 //#include "XiMath/boostHelper.h"
 //#include "XiMath/sparseMatrix.h"
-#include "XiFinPortfolio/kalmanLogLikelihoodAd.h"
+#include "kalmanLogLikelihoodAd.h"
 //#include "mexConvertTypes.hpp"
 
 

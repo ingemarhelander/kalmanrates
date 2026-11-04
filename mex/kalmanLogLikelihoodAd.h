@@ -9,6 +9,10 @@
 #include "XiMath/sparseMatrix.h"
 //#include "XiMath/iomatlab.h"
 
+// This header is also included directly, without other finance headers.
+namespace XiMath {}
+namespace XiFin {}
+
 using namespace boost::numeric::ublas;
 using namespace XiMath;
 using namespace XiFin;
@@ -500,7 +504,8 @@ public:
     std::size_t n = As.size2();
     const vector<T>& Av = As.val();
     rMax += m*n; 
-    dMax += n*Av.size(); 
+    // Each stored sparse entry contributes once, in its own output column.
+    dMax += Av.size();
   }
   virtual void f() 
   {
@@ -4838,11 +4843,8 @@ void gradKalmanLogLikelihood(KalmanData<T>& kd)
     else
       ad(i)->count(rMax, dMax);
 
-                      // Remove these later, only here to create equality while debugging
-  dMax -= 12323500; // DSigmaw
-  dMax -= 3799737; // GSigmav
-
-  //std::cout << rMax << " " << dMax << std::endl;
+  const std::size_t countedRows = rMax;
+  const std::size_t countedData = dMax;
 
   std::size_t debugM = 50000000; // Ensures sufficient amount of memory while debugging, remove
   rMax += debugM;
@@ -4915,12 +4917,10 @@ void gradKalmanLogLikelihood(KalmanData<T>& kd)
       for (std::size_t j=0 ; j<retM.size2() ; j++)
         retM(i,j) = (*vL(i))(j,j);*/
 
-    //if (nr+debugM != rMax)
-    if (nr+debugM > rMax)
-      std::cout << "AD: Incorrect number of rows:" << nr << "!=" << rMax-debugM << " diff= " << rMax-debugM-nr << std::endl;
-    //if (nd+debugM != dMax)
-    if (nd+debugM > dMax)
-      std::cout << "AD: Incorrect number of data:" << nd << "!=" << dMax-debugM << " diff= " << dMax-debugM-nd << std::endl;
+    if (nr > countedRows)
+      std::cout << "AD: Incorrect number of rows: actual=" << nr << " counted=" << countedRows << std::endl;
+    if (nd > countedData)
+      std::cout << "AD: Incorrect number of data: actual=" << nd << " counted=" << countedData << std::endl;
 
 
     // Test derivatives one at a time
