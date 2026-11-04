@@ -35,6 +35,28 @@ assertSuccess(results)
 checkLaptopSample % Testar modellen utan att spara resultat
 ```
 
+## Bygg om och kontrollera MEX-filen
+
+Gör detta på simhall-datorn med MATLAB, en C++-kompilator och handledarens
+bibliotek. Kontrollera sökvägen `progDir` i `mex/compileMex.m`.
+Spara referensen **innan** den gamla MEX-filen ersätts:
+
+```matlab
+setupPaths
+checkMexRegression('baseline') % Sparar gamla värden och gradienter
+compileMex                    % Bygger modellen och testhjälparen
+which mexKalmanLogLikelihood -all
+results = runtests('tests');
+assertSuccess(results)
+checkMexRegression('verify')   % Jämför 100, 250, 500 och alla dagar
+checkLaptopSample
+```
+
+Referensen sparas i `data/adCountReference.mat` och skrivs inte över.
+Verifieringen kontrollerar även utvalda gradienter med finita differenser för
+250 dagar. Räkna med att hela kontrollen kräver den starkare datorn.
+Den nya `.mexw64`-filen ignoreras av Git och behöver kopieras separat till andra datorer.
+
 ## Koppla till remote datorn
 OBS Endast en person kan använda datorn åt gången.
 
@@ -218,6 +240,7 @@ flowchart TD
 - `kalmanOptimizeSD.m` – ML-skattning med brantaste lutning
 - `functions/` – hjälpfunktioner för sökriktning, linjesökning och optimering i ett delrum
 - `checkLaptopSample.m` – kontrollerar modellen, ett RTS-steg och gradienter utan att spara resultat
+- `checkMexRegression.m` – sparar referens före omkompilering och jämför värden och gradienter efteråt
 
 De tre optimeringsskripten laddar det ursprungliga sparade Kalman-objektet via `loadKalmanSample.m`.
 
@@ -236,13 +259,14 @@ De tre optimeringsskripten laddar det ursprungliga sparade Kalman-objektet via `
 **tests/**
 
 - `testDataLimit.m` – testar dataurval, oförändrade parametrar och PCA med kort historik
+- `testAdCounts.m` – kör räknartesterna i `mex/testAdCountsMex.cpp`, som byggs av `compileMex`
 
 **mex/**
 
 - `mexKalmanLogLikelihood.cpp` – MEX-gränssnitt för log-likelihood + gradient
 - `kalmanLogLikelihoodAd.h` – Kalmanfilter med automatisk differentiering
 - `sparseMatrix.h` – gles matrisklass
-- `compileMex.m` – kompilering (kräver handledarens bibliotek, körs från `mex/`)
+- `compileMex.m` – bygger modellen och testhjälparen med projektets lokala AD-header (kräver handledarens bibliotek)
 - `mexKalmanLogLikelihood.mexw64` \* – kompilerad version
 - `mexPortfolio.mexw64` \* – handledarens bibliotek för marknadsdata och instrument
 - `old/kalmanLogLikelihoodAd2.h` – äldre version, används inte
@@ -264,6 +288,7 @@ De tre optimeringsskripten laddar det ursprungliga sparade Kalman-objektet via `
 - `kalmanXoptAll.mat` \* – optimerade parametrar
 - `axRtsOpt.mat` \* – starttillstånd från RTS
 - `axRtsOpt_sample250.mat` – motsvarande resultat från en kort körning (antalet dagar styr namnet)
+- `adCountReference.mat` – genererad referens för kontroll av den omkompilerade MEX-filen
 
 **docs/**
 
