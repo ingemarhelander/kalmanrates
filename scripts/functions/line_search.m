@@ -5,7 +5,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varIn
 % one per column: evals.X, evals.F, evals.G.
     maxLsIter = 50;
     evals.X = x;  evals.F = f;  evals.G = g;
-    alpha = initial_step_length(g, d);
+    alpha = first_step_length(g, d);
     xNew = x + alpha*d;
     [fNew, gNew] = kalmanObj(xNew, K, mu, varInd);
     evals.X(:, end+1) = xNew;  evals.F(1, end+1) = fNew;  evals.G(:, end+1) = gNew;
@@ -26,19 +26,6 @@ function [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varIn
             break;
         end
     end
-end
-
-function alpha = initial_step_length(g, d)
-% Steps are far too long in the beginning, so cap the step such that the
-% predicted (linear) increase in the objective is at most objInc.
-
-    objInc   = 1E2;
-    alphaMin = 1E-5;
-
-    alpha = 1;
-    alphaObjInc = objInc/(g'*d);
-    alpha = min(alpha, alphaObjInc);
-    alpha = max(alpha, alphaMin);
 end
 
 function print_line_search(lsIter, alpha, fNew, f, dfNew)
