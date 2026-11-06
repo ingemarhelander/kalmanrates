@@ -28,23 +28,7 @@ function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd)
     fprintf('[denoise] size(D)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
         mat2str(size(D)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
-    % Project X and G onto the span of D to get a smaller problem.
-    Z = D' * X;
-    Gsmall = D' * G;
-    fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
-        mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
-
-    %Call the function that computes the quadratic approximation.
-    [Qsmall, qsmall, c, esmall] = compute_quadratic_approximation(Z, F, Gsmall);
-
-
-    fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
-        mat2str(size(Qsmall)), mat2str(size(qsmall)), mat2str(size(c)), mat2str(size(esmall)));
-
-    % Transform the small quadratic model back to the original space.
-    Q = D * Qsmall * D';
-    q = D * qsmall;
-    e = [esmall(1, :); D * esmall(2:end, :)];
+    [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D);
 
     % Check that q is finite.
     if any(~isfinite(q))
@@ -67,6 +51,27 @@ function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd)
     if alphaLbdMin < 1
         d = d * alphaLbdMin * 0.99;
     end
+end
+
+
+function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D)
+% Project X and G onto the span of D to get a smaller problem.
+    Z = D' * X;
+    Gsmall = D' * G;
+    fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
+        mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
+
+    %Call the function that computes the quadratic approximation.
+    [Qsmall, qsmall, c, esmall] = compute_quadratic_approximation(Z, F, Gsmall);
+
+
+    fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
+        mat2str(size(Qsmall)), mat2str(size(qsmall)), mat2str(size(c)), mat2str(size(esmall)));
+
+    % Transform the small quadratic model back to the original space.
+    Q = D * Qsmall * D';
+    q = D * qsmall;
+    e = [esmall(1, :); D * esmall(2:end, :)];
 end
 
 
@@ -210,10 +215,14 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G)
     % Steps 5-7: solve the coupled equations (96)-(97) for the noise
     % ------------------------------------------------------------------
     % Returns e_f (1 x m) and e_g (n x m).
-    [e_f, e_g] = fixed_point(F, G, ...
-                             a_all, A_all, ...
-                             w_xi, wbar_xi, w, wbar, ...
-                             R);
+    %[e_f, e_g] = fixed_point(F, G, ...
+    %                         a_all, A_all, ...
+    %                         w_xi, wbar_xi, w, wbar, ...
+    %                         R);
+    [e_f, e_g] = solve_noise_system(F, G, ...
+                                a_all, A_all, ...
+                                w_xi, wbar_xi, w, wbar, ...
+                                R);
 
     % ------------------------------------------------------------------
     % Recompute y from the final noise terms (Step 3 and Step 4)
@@ -395,4 +404,61 @@ function [e_f, e_g] = fixed_point(F, G, a_all, A_all, ...
                  'iterations (last change %.3e).'], ...
                 maxIterations, changeNorm);
     end
+end
+
+
+function [e_f, e_g] = solve_noise_system(F, G, a_all, A_all, ...
+                                         w_xi, wbar_xi, w, wbar, R)
+% SOLVE_NOISE_SYSTEM  Solve the stationarity conditions as M*x = b.
+%
+% The unknown vector is ordered as all function-noise terms first, followed
+% by each sample's gradient-noise vector:
+%   x = [e_1; ...; e_m; ebar_1; ...; ebar_m].
+% The matrix M is the positive-definite Schur complement from the notes.
+
+    n = size(G, 1);
+    m = size(G, 2);
+    p = size(a_all, 1);
+    numberOfUnknowns = m * (n + 1);
+
+    % Build B, where each column contains a sample's contribution to alpha.
+    B = zeros(p, numberOfUnknowns);
+    beta = zeros(p, 1);
+    d = zeros(numberOfUnknowns, 1);
+    diagonalW = zeros(numberOfUnknowns, 1);
+
+    for i = 1:m
+        a_i = a_all(:, i);
+        A_i = A_all(:, :, i);
+        gradientColumns = m + (i - 1) * n + (1:n);
+
+        B(:, i) = w_xi(i) * a_i;
+        B(:, gradientColumns) = wbar_xi(i) * A_i';
+
+        beta = beta + w_xi(i) * F(i) * a_i ...
+            + wbar_xi(i) * (A_i' * G(:, i));
+
+        % d and W use the same function-first, gradient-blocks-second order.
+        d(i) = w_xi(i) * F(i);
+        d(gradientColumns) = wbar_xi(i) * G(:, i);
+        diagonalW(i) = w(i);
+        diagonalW(gradientColumns) = wbar(i);
+    end
+
+    % Apply S^{-1} using the Cholesky factor S = R' * R; do not form S^{-1}.
+    SInvB = R \ (R' \ B);
+    SInvBeta = R \ (R' \ beta);
+
+    % Form the Schur-complement system and remove tiny round-off asymmetry.
+    M = diag(diagonalW) - B' * SInvB;
+    M = 0.5 * (M + M');
+    rhs = -(d + B' * SInvBeta);
+
+    % M is positive definite when the measurement-noise weights are positive.
+    % Cholesky gives a stable direct solve without explicitly inverting M.
+    Rm = chol(M);
+    noise = Rm \ (Rm' \ rhs);
+
+    e_f = noise(1:m)';
+    e_g = reshape(noise(m + 1:end), n, m);
 end
