@@ -30,6 +30,21 @@ Flytta över en fil:
 2. Under This PC ska det finnas en som heter C on "Datornamn"
 3. Dra enkelt över filerna dit du vill ha dem.
 
+## Testa line search
+
+Testerna körs lokalt och kräver varken datafiler, mex-filer eller remote datorn. Kör från projektroten i MATLAB:
+
+```matlab
+setupPaths; runtests('tests')
+```
+
+I stället för den riktiga `kalmanObj` används en stubb, `tests/stubs/kalmanObj.m`, som är en syntetisk konkav funktion med känt maximum och inställbart brus. Lägg inte `tests/stubs` i `setupPaths`, eftersom stubben då kan ersätta den riktiga `kalmanObj`.
+
+Testerna i `tests/testLineSearch.m` finns i två grupper:
+
+- **Grupp A** gäller både prototypen och den färdiga polynommetoden och ska alltid gå igenom.
+- **Grupp B** är krav som prototypen inte uppfyller än. De hoppas över och visas som `Incomplete`. Sätt `PolynomialLineSearchReady = true` i testklassen när polynommetoden är på plats.
+
 ## Struktur
 
 ```
@@ -41,6 +56,7 @@ kalmanrates/
 ├── mex/             C++/MEX-kod och kompilerade filer
 ├── measurement/     instrumentklasser och dataladdning
 ├── data/            .mat-filer (*), raw/ innehåller Excel-rådata
+├── tests/           tester, stubs/ innehåller testversioner av funktioner
 └── docs/            dokument och figurer
 ```
 
