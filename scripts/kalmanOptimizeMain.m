@@ -6,8 +6,13 @@
 
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 
-[K, mu, maxIter, varInd, xLbd, x] = setup_problem();
-noisy_size = 3; % Dimension of noisy subspace
+config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+
+maxIter = config.maxIter; % Maximum number of iterations
+mu = config.mu;
+noisy_size = config.noisy_size; % Dimension of noisy subspace
+
+[K, varInd, xLbd, x] = setup_problem();
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];          % Last noisy_size search directions (one per column)
@@ -91,14 +96,9 @@ end
 
 %% Help function given by Jörgen.
 
-function [K, mu, maxIter, varInd, xLbd, x] = setup_problem()
+function [K, varInd, xLbd, x] = setup_problem()
 % Loads data, sets the starting point, selects which variables to optimize
 % and builds the lower bounds for them.
-
-    maxIter = 100;
-    % mu = 1E-4;
-    % mu = 1E-8;
-    mu = 1E-2;
 
     S = load('kalmanDebug.mat');
     if isfield(S, 'K')
@@ -175,4 +175,48 @@ function history = update_history(history, x, f, g)
     history.normOftravelledDistances(end+1, 1) = norm(history.xInit - x);
     history.xs(:, end+1) = x;
     history.grads(:, end+1) = g;
+end
+
+function config = read_config(configPath)
+% Reads key/value rows into a struct. Blank lines and lines beginning with
+% # or % are ignored.
+
+    fid = fopen(configPath, 'r');
+    if fid == -1
+        error('Could not open config file: %s', configPath);
+    end
+    cleanup = onCleanup(@() fclose(fid));
+    config = struct();
+
+    while true
+        line = fgetl(fid);
+        if ~ischar(line)
+            break;
+        end
+        line = strtrim(line);
+        if isempty(line) || startsWith(line, '#') || startsWith(line, '%')
+            continue;
+        end
+
+        tokens = regexp(line, '^([A-Za-z]\w*)\s+(.+)$', 'tokens', 'once');
+        if isempty(tokens) || ~isvarname(tokens{1})
+            error('Invalid config row: %s', line);
+        end
+
+        key = tokens{1};
+        valueText = strtrim(tokens{2});
+        if strcmpi(valueText, 'true')
+            value = true;
+        elseif strcmpi(valueText, 'false')
+            value = false;
+        else
+            numericValue = str2double(valueText);
+            if ~isnan(numericValue) || strcmpi(valueText, 'nan')
+                value = numericValue;
+            else
+                value = valueText;
+            end
+        end
+        config.(key) = value;
+    end
 end
