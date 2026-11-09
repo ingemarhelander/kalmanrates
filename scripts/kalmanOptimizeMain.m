@@ -26,7 +26,7 @@ while true
     d = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varInd);
+    [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd);
 
     %Print and update history
     print_iteration(iter, alpha, f, fNew, g, gNew);
