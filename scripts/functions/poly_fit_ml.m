@@ -14,6 +14,7 @@ function fit = poly_fit_ml(alpha, F, S, q)
 %   fit.y           polynomets koefficienter (format valfritt, används av maxsökningen)
 %   fit.rF, fit.rG  residualer för F och S (m x 1), används av select_poly_degree
 %   fit.wF, fit.wG  vikter 1/sigmaF^2 och 1/sigmaG^2, används av select_poly_degree
+%   fit.sigmaF      skattad brusnivå i F, används som stoppkriterium i line_search_main
 
     a = alpha.^(0:q);                                   % rader [1, α, α², ...]
     b = [zeros(size(alpha)), (1:q).*alpha.^(0:q-1)];    % derivatan av raderna i a
@@ -22,4 +23,9 @@ function fit = poly_fit_ml(alpha, F, S, q)
     fit.rG = S - b*fit.y;
     fit.wF = 1;
     fit.wG = 1;
+    % Ingen brusskattning ännu: 0 stänger av brusvillkoret i line_search_main.
+    % Att skatta från residualerna fungerar inte, eftersom modellfel vid för
+    % låg grad (få punkter ger alltid grad 2) räknas som brus och stoppar
+    % linjesökningen för tidigt. Sätts av ML-skattningen.
+    fit.sigmaF = 0;
 end
