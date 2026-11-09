@@ -23,7 +23,7 @@ while true
     history = update_history(history, x, f, g);
 
     %Find search direction d
-    d = find_search_direction(x, g, xLbd);
+    d = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
     [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varInd);
