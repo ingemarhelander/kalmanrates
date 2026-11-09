@@ -9,7 +9,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   - maxEvals punkter är utvärderade.
 % Returnerar den utvärderade punkt som har störst anpassat värde p(alpha_j).
 %
-% evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G).
+% Skriver ut en rad per utvärderad punkt.
+%
+% evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G),
+% och steglängden för varje punkt i evals.A (startpunkten har 0).
 
     maxEvals = 20;     % högsta antal nya punkter
     dMinRel  = 1e-3;   % minsta avstånd till en utvärderad punkt, relativt största steget (Req. 31)
@@ -26,6 +29,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         [fTry, gTry] = kalmanObj(xTry, K, mu, varInd);
         evals.X(:, end+1) = xTry;  evals.F(end+1) = fTry;  evals.G(:, end+1) = gTry;
         alphas(end+1) = alphaNew; %#ok<AGROW>
+        fprintf('    line search eval %2d: alpha = %.4e, f-f0 = %+.4e, f'' = %+.4e\n', ...
+                k, alphaNew, fTry - f, gTry'*d);
 
         % Punkter med NaN eller Inf tas inte med i anpassningen
         ok = isfinite(evals.F) & all(isfinite(evals.G), 1);
