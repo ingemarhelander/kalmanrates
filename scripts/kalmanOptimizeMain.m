@@ -45,7 +45,7 @@ while true
     %Make sure the last search direction is stored and run noisy optimization
     D = store_direction(D, d, noisy_size);
     if iter > noisy_size
-        d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd);
+        d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, config);
         if ~any(d)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else

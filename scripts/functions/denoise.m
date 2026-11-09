@@ -1,4 +1,4 @@
-function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd)
+function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, config)
 % Placeholder: returns x, f, g unchanged.
     columnNorms = sqrt(sum(abs(D).^2, 1));
 
@@ -28,7 +28,7 @@ function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd)
     fprintf('[denoise] size(D)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
         mat2str(size(D)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
-    [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D);
+    [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D, config.fixed_or_exact);
 
     % Check that q is finite.
     if any(~isfinite(q))
@@ -54,7 +54,7 @@ function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd)
 end
 
 
-function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D)
+function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D, method)
 % Project X and G onto the span of D to get a smaller problem.
     Z = D' * X;
     Gsmall = D' * G;
@@ -62,7 +62,7 @@ function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D)
         mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
     %Call the function that computes the quadratic approximation.
-    [Qsmall, qsmall, c, esmall] = compute_quadratic_approximation(Z, F, Gsmall);
+    [Qsmall, qsmall, c, esmall] = compute_quadratic_approximation(Z, F, Gsmall, method);
 
 
     fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
@@ -75,7 +75,7 @@ function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D)
 end
 
 
-function [Q, q, c, e] = compute_quadratic_approximation(X, F, G)
+function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
 % COMPUTE_QUADRATIC_APPROXIMATION  Fit one quadratic model to noisy f and g.
 %
 %   Inputs
@@ -215,14 +215,22 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G)
     % Steps 5-7: solve the coupled equations (96)-(97) for the noise
     % ------------------------------------------------------------------
     % Returns e_f (1 x m) and e_g (n x m).
-    %[e_f, e_g] = fixed_point(F, G, ...
-    %                         a_all, A_all, ...
-    %                         w_xi, wbar_xi, w, wbar, ...
-    %                         R);
-    [e_f, e_g] = solve_noise_system(F, G, ...
-                                a_all, A_all, ...
-                                w_xi, wbar_xi, w, wbar, ...
-                                R);
+
+    if method == 0
+        fprintf('Using fixed point iteration to solve the noise system.\n');
+        [e_f, e_g] = fixed_point(F, G, ...
+                                 a_all, A_all, ...
+                                 w_xi, wbar_xi, w, wbar, ...
+                                 R);
+    elseif method == 1
+        fprintf('Using direct solve to solve the noise system.\n');
+        [e_f, e_g] = solve_noise_system(F, G, ...
+                                        a_all, A_all, ...
+                                        w_xi, wbar_xi, w, wbar, ...
+                                        R);
+    else
+        error('denoise:UnknownMethod', 'Unknown method for solving the noise system.');
+    end
 
     % ------------------------------------------------------------------
     % Recompute y from the final noise terms (Step 3 and Step 4)
