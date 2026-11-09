@@ -1,20 +1,20 @@
 function d = find_search_direction(x, g, xLbd, D)
-% FIND_SEARCH_DIRECTION Computes an orthonormalised search direction 
+% find_search-direction Computes an orthonormalised search direction 
 % using a modified conjugate gradient / Gram-Schmidt approach.
 
-    % 1. Initial direction[cite: 1]
+    %Initial direction
     d = g;
     
     if isempty(D)
-        % Första iterationen: Gradienten väljs som initial sökriktning[cite: 1].
+        % Första iterationen: Gradienten väljs som initial sökriktning
         norm_d = norm(d);
         if norm_d > 0
             d = d / norm_d;
         end
         fprintf('[find_search_direction] Använder normaliserad gradient som initial sökriktning.\n');
     else
-        % 2. Orthonormalisation[cite: 1]
-        % Gram-Schmidt ortogonalisering mot alla tidigare riktningar[cite: 1].
+        % 2. Orthonormalisation
+        % Gram-Schmidt ortogonalisering mot alla tidigare riktningar
         fprintf('[find_search_direction] Utför Gram-Schmidt mot %d tidigare riktning(ar)...\n', size(D, 2));
         for i = 1:size(D, 2)
             d_prev = D(:, i);
@@ -23,7 +23,7 @@ function d = find_search_direction(x, g, xLbd, D)
             d = d - proj;
         end
         
-        % Normalisera den nya riktningen för att säkerställa att den är ortonormal[cite: 1]
+        % Normalisera den nya riktningen för att säkerställa att den är ortonormal
         norm_d = norm(d);
         if norm_d > 1e-12
             d = d / norm_d;
