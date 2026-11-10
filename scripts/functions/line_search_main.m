@@ -32,10 +32,13 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         fprintf('    line search eval %2d: alpha = %.4e, f-f0 = %+.4e, f'' = %+.4e\n', ...
                 k, alphaNew, fTry - f, gTry'*d);
 
-        % Punkter med NaN eller Inf tas inte med i anpassningen
+        % Punkter med NaN eller Inf tas inte med i anpassningen (Req. 42).
+        % En sådan punkt är aldrig en förbättring: halvera steget och krymp
+        % trust region, så att polynomsteget inte går tillbaka dit.
         ok = isfinite(evals.F) & all(isfinite(evals.G), 1);
-        if sum(ok) < 2
-            alphaNew = alphaNew/2;           % bara startpunkten är giltig: korta steget
+        if ~ok(end) || sum(ok) < 2
+            alphaNew = alphaNew/2;
+            alphaMax = min(alphaMax, alphaNew);
             continue
         end
         [qPrev, fit] = select_poly_degree(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev);
