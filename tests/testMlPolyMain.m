@@ -112,5 +112,5 @@ end
 function [q, fit] = mlQuiet(alpha, F, S)
 % ml_poly_main med lag-1, utan utskrifterna från poly_fit_ml.
     q = [];  fit = [];
-    evalc('[q, fit] = ml_poly_main(alpha, F, S);');
+    evalc('[q, fit] = ml_poly_main(alpha, F, S, [], ''lag1'');');
 end
