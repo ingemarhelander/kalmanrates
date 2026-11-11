@@ -3,14 +3,14 @@
 Skattning av EUR-räntekurvan med Kalmanfilter. Koden kommer ursprungligen från Jörgen.
 Gruppen kan köra 250 dagar på egna laptops och hela historiken på simhall.
 
-**Isak ansvarar för bygget och det delade MEX-paketet.** Kollegorna använder
+**Isak ansvarar för det uppdaterade MEX-paketet som krävs för att köra koden på sin egen dator.** De andra använder
 färdiga filer och behöver normalt inte installera C++ eller Boost.
 
 ## Förutsättningar
 
 - MATLAB och Git samt åtkomst till projektets GitHub-repo och Google Drive.
 - Det delade paketet är verifierat på **64-bitars Windows med MATLAB R2026b**.
-  Har du annan version eller Mac/Linux, stäm av med Isak innan setup.
+  Har du annan version eller Mac/Linux? Isåfall är det oklart om det kommer funka, men jag hoppas det /Isak.
 - Standardoptimeringen nedan kräver inga extra toolboxar.
   För RTS och `fmincon`, se [toolboxkrav](docs/felsokning.md#saknade-toolboxar).
 
@@ -18,12 +18,7 @@ färdiga filer och behöver normalt inte installera C++ eller Boost.
 
 ### 1. Hämta koden
 
-För en ny kopia, kör i terminalen:
-
-```powershell
-git clone --branch issue-1-komprimera-data https://github.com/ingemarhelander/kalmanrates.git
-cd kalmanrates
-```
+Klona projektet från github.
 
 Har du redan projektet, kör följande från din projektmapp i terminalen:
 
@@ -65,7 +60,7 @@ assertSuccess(results)
 ```
 
 `which` ska visa filen i projektets egen `mex/`-mapp och alla sju tester ska passera.
-Om något stoppar: se [felsökning](docs/felsokning.md) eller kontakta Isak.
+Om något stoppar: se [felsökning](docs/felsokning.md).
 
 ## Kör 250 dagar på din laptop
 
@@ -79,9 +74,8 @@ kalmanOptimizeMain
 
 ## Kör hela historiken på simhall
 
-1. [Anslut till simhall](docs/fjarrskrivbord.md). Endast en person kan använda datorn åt gången.
-2. Hämta samma branch, data och uppdaterade MEX-filer där. Stäm av MATLAB-versionen
-   med Isak; laptop-paketet är byggt för R2026b.
+1. [Anslut till simhall](docs/fjarrskrivbord.md).
+2. Hämta samma branch, data och uppdaterade MEX-filer där. Stäm av MATLAB-versionen. Laptop-paketet är byggt för R2026b.
 3. Ändra **lokalt på simhall** till `config.maxObservations = Inf` i `modelRunConfig.m`.
    Behåll 250 som gemensam standard i Git.
 4. Kör `setupPaths` och `kalmanOptimizeMain` i MATLAB från projektmappen.
