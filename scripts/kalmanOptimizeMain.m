@@ -15,7 +15,8 @@ noisy_size = config.noisy_size; % Dimension of noisy subspace
 [K, varInd, xLbd, x] = setup_problem();
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
-D = [];          % Last noisy_size search directions (one per column)
+D = [];           % All orthogonal search directions 
+B = [];          % Last noisy_size search directions (one per column)
 evalHist = {};   % History of line search evaluations
 iter = 1;
 
@@ -42,10 +43,10 @@ while true
         break;
     end
     
-    %Make sure the last search direction is stored and run noisy optimization
-    D = store_direction(D, d, noisy_size);
+    %Make sure the last n search direction is stored as a base B and run noisy optimization
+    B = store_direction(D, d, noisy_size);
     if iter > noisy_size
-        [x, f, g] = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd);
+        [x, f, g] = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd);
     end
 
     %Check if current step fulfills stop criterion.
@@ -74,12 +75,12 @@ function print_iteration(iter, alpha, f, fNew, g, gNew)
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
-function D = store_direction(D, d, noisy_size)
+function B = store_direction(D, d, noisy_size)
 % Keeps only the noisy_size most recent search directions (one per column).
 
-    D = [D, d];
+    D = [D, d]; % adds last search direction to matrix with all previous search directions
     if size(D, 2) > noisy_size
-        D = D(:, end-noisy_size+1:end);
+        B = D(:, end-noisy_size+1:end);
     end
 end
 
