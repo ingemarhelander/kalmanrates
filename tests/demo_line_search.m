@@ -1,4 +1,4 @@
-function demo_line_search(minPoints)
+function demo_line_search()
 % demo_line_search - Kör hela line_search_main på en påhittad målfunktion.
 %
 % Målfunktionen har två variabler och brus på f och g. tests/stubs/kalmanObj.m
@@ -10,15 +10,8 @@ function demo_line_search(minPoints)
 % vald grad och nästa steglängd. Sista figuren visar varför sökningen
 % stoppade och vilken punkt som returneras. En sista figur jämför metoderna.
 %
-% minPoints (valfri, standard 6): line search får inte stoppa på lutning
-% eller brus förrän så många punkter (startpunkten inräknad) är utvärderade.
-% demo_line_search(0) kör med standardinställningarna i line_search_main.
-%
 % Kör från projektroten med:  demo_line_search
 
-    if nargin < 1
-        minPoints = 6;
-    end
     close all;
     testDir = fileparts(mfilename('fullpath'));
     stubDir = fullfile(testDir, 'stubs');
@@ -44,8 +37,7 @@ function demo_line_search(minPoints)
         [f0, g0] = K(x0);
         fprintf('\n%s:\n', methodNames{k});
         out = struct();
-        [out.alpha, ~, out.fNew, ~, out.evals] = line_search_main(x0, f0, g0, d, K, [], [], ...
-                                                                  methodNames{k}, struct('minPoints', minPoints));
+        [out.alpha, ~, out.fNew, ~, out.evals] = line_search_main(x0, f0, g0, d, K, [], [], methodNames{k});
         out.f0 = f0;
         out.S = d'*out.evals.G;                       % lutning längs d i varje punkt
         results{k} = out;

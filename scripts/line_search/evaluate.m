@@ -27,20 +27,14 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
 %               andelen c^2 av den möjliga ökningen längs d.
 % opts.dMinRel: minsta avstånd relativt största steget. Relativt stegen och
 %               inte alphaMax, som kan vara mycket större än stegen.
-% opts.minPoints (valfri, standard 0): kriterium 1 och 3 får stoppa först när
-%               minst så många punkter (startpunkten inräknad) är utvärderade.
 %
 % Bruset i riktningsderivatan antas vara litet jämfört med c|f'_0|, så
 % lutningsvillkoret har ingen brusspärr (jfr fit.sigmaG om det behövs).
 % maxEvals hanteras av loopen i line_search_main, inte här.
 
-    if ~isfield(opts, 'minPoints')
-        opts.minPoints = 0;
-    end
     stop = true;
     improved = max(F(ok)) > F(1);    % returpunkten är bättre än startpunkten
-    enough = numel(alphas) >= opts.minPoints;   % tillräckligt många punkter för kriterium 1 och 3
-    if enough && abs(fj) <= opts.c*abs(f0) && improved
+    if abs(fj) <= opts.c*abs(f0) && improved
         reason = sprintf('lutningen har planat ut, |f''_j| <= %.2g |f''_0|, och F har ökat', opts.c);
         return
     end
@@ -49,7 +43,7 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
         return
     end
     % fit.sigmaF är ~0 vid exakt anpassning. Då stoppar bara de andra kriterierna.
-    if enough && improved && poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < fit.sigmaF
+    if improved && poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < fit.sigmaF
         reason = 'förutsagd ökning mindre än bruset, och F har ökat';
         return
     end

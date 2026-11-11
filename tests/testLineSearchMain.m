@@ -53,16 +53,6 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyTrue(all(q >= 2 & q <= 6));
         end
 
-        function minPointsGivesMorePoints(testCase)
-            % Med minPoints = 6 får sökningen inte stoppa på lutning eller
-            % brus förrän 6 punkter finns, bara om nästa punkt är för nära.
-            rng(1);
-            K = objective(0.05, 0.1);
-            [f0, g0] = K([0; 0]);
-            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lag1', struct('minPoints', 6));
-            testCase.verifyTrue(numel(evals.A) >= 6 || contains(evals.reason, 'för nära'), evals.reason);
-        end
-
         function nonFinitePointsAreSkipped(testCase)
             % f är NaN för långa steg. Sökningen ska inte krascha och ska
             % returnera en ändlig punkt (Req. 42).
@@ -94,11 +84,8 @@ function [f, g] = nanForLongSteps(K, x)
     end
 end
 
-function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, method, lsOpts)
+function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, method)
 % line_search_main utan utskrifter.
-    if nargin < 7
-        lsOpts = [];
-    end
     alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
-    evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], method, lsOpts);');
+    evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], method);');
 end
