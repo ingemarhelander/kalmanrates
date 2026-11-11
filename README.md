@@ -10,11 +10,16 @@ laptops när simhall-datorn är upptagen. Samma kod kan använda hela historiken
 ## Varje kollega: kör 250 dagar på din laptop
 
 **C++-kompilator och Boost behövs bara för att bygga om MEX-filerna.** För att
-köra koden kan ni dela färdigkompilerade filer. En person kan bygga dem åt gruppen.
+köra koden använder gruppen färdigkompilerade filer. **Isak ansvarar för bygget
+och det delade MEX-paketet.** Kollegorna behöver normalt inte bygga om något.
+
+De ursprungliga MEX-filerna kommer från Jörgen. I det uppdaterade paketet är
+`mexPortfolio` oförändrad, medan Kalman-filen har byggts om för AD-fixen och
+testhjälparen är ny. Använd därför det uppdaterade paketet från Isak.
 
 1. Installera MATLAB. Det delade paketet är verifierat på **64-bitars Windows
-   med MATLAB R2026b**. För äldre MATLAB-versioner behöver en person bygga och
-   testa motsvarande filer i den versionen. Version och plattform kan kontrolleras
+   med MATLAB R2026b**. För andra MATLAB-versioner, stäm av med Isak att det
+   finns kompatibla filer. Version och plattform kan kontrolleras
    med `version('-release')` och `computer('arch')` (R2026b respektive win64).
    Mac/Linux kräver egna MEX-filer, även för Jörgens `mexPortfolio`, vars källkod
    inte finns i projektet.
@@ -23,7 +28,7 @@ köra koden kan ni dela färdigkompilerade filer. En person kan bygga dem åt gr
 3. Hämta `EUR.mat`, `EUR100.mat`, `kalmanDebug.mat` och `kalmanXoptAll.mat`
    från gruppens Google Drive (Projekt TATA85/Kod) och lägg dem i `data/`.
    Excel-filerna i `data/raw/` följer med Git och behövs vid initiering.
-4. Hämta det **uppdaterade MEX-paketet** från den som byggt det och packa upp
+4. Hämta det **uppdaterade MEX-paketet från Isak** och packa upp
    det i projektmappen. Följande filer ska hamna på dessa platser:
    - `mex/mexKalmanLogLikelihood.mexw64` – den omkompilerade modellen med AD-fixen.
    - `mex/mexPortfolio.mexw64` – Jörgens befintliga instrumentbibliotek.
@@ -48,11 +53,12 @@ För `kalmanOptimizeMatlab` med `fmincon` behövs Optimization Toolbox;
 
 **Git innehåller inte MEX-filerna eller MAT-datafilerna.** Enbart `git pull`
 räcker därför inte för en ny dator eller när en ny MEX-version har byggts.
-Den gamla modellbinären från Drive innehåller inte AD-fixen. Dela det nya paketet
-via gruppens Drive; det publiceras inte automatiskt när kod pushas till GitHub.
+Den gamla modellbinären från Drive innehåller inte AD-fixen. Isak ansvarar för
+att dela det uppdaterade paketet via gruppens Drive; det publiceras inte
+automatiskt när kod pushas till GitHub.
 Ett lokalt paket för delning finns i `dist/kalmanrates-mex-win64-R2026b-20261111.zip`
 på datorn där denna version förbereddes. Paketet innehåller de tre MEX-filerna
-och bygginformation, men inga datafiler. Det behöver läggas på Drive av gruppen.
+och bygginformation, men inga datafiler. Isak ansvarar för att lägga det på Drive.
 
 Om MATLAB rapporterar saknade `MSVCP`-/`VCRUNTIME`-DLL-filer kan Microsoft
 Visual C++ Redistributable för x64 behövas; själva kompilatorn behövs inte för körning.
@@ -64,7 +70,7 @@ Kör helst med samma MATLAB-release som paketet byggdes med:
 
 1. Hämta samma branch och se till att data och en uppdaterad MEX-version finns
    även där. Kontrollera MATLAB-versionen; paketet ovan är byggt för R2026b.
-   Är versionen äldre behöver en person bygga MEX-filerna med den versionen.
+   Är versionen en annan, stäm av med Isak att MEX-filerna är kompatibla.
 2. Ändra **lokalt på simhall** till `config.maxObservations = Inf` i
    `modelRunConfig.m`. Låt branchens gemensamma standard vara 250 dagar.
 3. Kör `setupPaths` och exempelvis `kalmanOptimizeMain` i MATLAB som vanligt.
@@ -74,10 +80,12 @@ Korta körningar får resultatnamn med `_sample250` (eller valt antal dagar).
 Fulla körningar använder de ursprungliga resultatnamnen. Hela datafiler kan
 fortfarande behöva läsas in även när bara 250 dagar används.
 
-## Bara den som bygger nya MEX-filer: C++ och Boost
+## För Isak: bygginformation vid behov
 
-Detta behövs vid C++-ändringar eller om gruppen behöver binärer för en annan
-MATLAB-version. Installera en kompatibel C++-kompilator och hämta Boost.
+Nya byggen ingår normalt inte i gruppens arbetsflöde: kollegorna använder de
+färdiga filerna från Isak. Informationen nedan sparas om en framtida kodändring
+eller annan MATLAB-version skulle kräva omkompilering. Isak ansvarar då för
+bygget, som kräver en kompatibel C++-kompilator och Boost.
 Det lokala bygget har verifierats med MSVC 2022 och Boost 1.67.0.
 `compileMex` använder `BOOST_ROOT` om den miljövariabeln är satt, annars
 `%USERPROFILE%/Documents/boost_1_67_0`. Annan sökväg kan anges som argument.
@@ -101,7 +109,7 @@ Flera storlekar kan väljas med ett tredje argument, exempelvis
 `checkMexRegression('baseline', dataPath('fullReference.mat'), [100 250 500 Inf])`.
 Använd samma fil och storlekar med `'verify'`. Välj hela historiken på den starkare datorn.
 
-Efter godkända kontroller delar byggansvarig de tre MEX-filerna ovan, tillsammans
+Efter godkända kontroller delar Isak de tre MEX-filerna ovan, tillsammans
 med MATLAB-release och plattform, via gruppens Drive. Övriga behöver då inte
 installera Boost eller en C++-kompilator och behöver inte köra `compileMex`
 eller jämförelsen mellan gamla och nya binärer.
