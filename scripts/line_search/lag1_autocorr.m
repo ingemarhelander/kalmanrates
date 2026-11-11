@@ -9,9 +9,9 @@ function rho = lag1_autocorr(r)
 % eget värde i rho.
 
     if isrow(r)
-        r = r(:);                  % en radvektor är en följd
+        r = r(:);                  % konvertera till kolumnvektor
     end
-    r = r - mean(r, 1);            % centrera varje följd
+    r = r - mean(r, 1);            % centrera hela kolumnerna, så att rho inte påverkas av konstant bias
     rho = sum(r(1:end-1, :).*r(2:end, :), 1) ./ sum(r.^2, 1);
     rho(~isfinite(rho)) = 0;       % alla residualer noll: räknas som brus
 end

@@ -14,12 +14,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G),
 % och steglängden för varje punkt i evals.A (startpunkten har 0).
 
-    maxEvals = 20;     % högsta antal nya punkter
+    maxEvals = 20;     % högsta antal nya punkter per sökriktning
     dMinRel  = 1e-3;   % minsta avstånd till en utvärderad punkt, relativt största steget (Req. 31)
 
     evals.X = x;  evals.F = f;  evals.G = g;
     alphas = 0;                              % steglängd för varje kolumn i evals
-    alphaNew = first_step_length(g, d);      % första nya punkten (Req. 22)
+    alphaNew = initial_step_length(g, d);      % första nya punkten (Req. 22)
     alphaMax = 1;                            % trust region (0, alphaMax]
     qPrev = [];                              % grad från förra varvet (hysteres)
     fit = [];                                % anpassning till alla giltiga punkter
