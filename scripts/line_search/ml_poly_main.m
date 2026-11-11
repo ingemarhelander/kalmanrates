@@ -1,4 +1,4 @@
-function [q, fit] = ml_poly_main(alpha, F, S, qPrev)
+function [q, fit, info] = ml_poly_main(alpha, F, S, qPrev)
 % ml_poly_main - ML-polynom längs linjen (ML-boxen i line search).
 %
 % Ingång till ML-delen. Anropar select_poly_degree, som anpassar ett
@@ -10,9 +10,14 @@ function [q, fit] = ml_poly_main(alpha, F, S, qPrev)
 %   S      lutning längs linjen, g'*d
 %   qPrev  grad från förra varvet, eller [] första gången (valfri)
 %   q      vald grad, fit är ML-anpassningen för den graden
+%   info   (valfri) detaljer per provad grad, se select_poly_degree
 
     if nargin < 4
         qPrev = [];
     end
-    [q, fit] = select_poly_degree(alpha, F, S, qPrev);
+    if nargout > 2
+        [q, fit, info] = select_poly_degree(alpha, F, S, qPrev);
+    else
+        [q, fit] = select_poly_degree(alpha, F, S, qPrev);
+    end
 end

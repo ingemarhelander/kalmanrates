@@ -74,8 +74,11 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
     tol = 1e-8;
     converged = false;
 
-    floorF = eps(max(sqrt(mean(F.^2)), 1))^2;
-    floorG = eps(max(sqrt(mean(S.^2)), 1))^2;
+    % Golv för varianserna, relativt datans storlek. Residualer under golvet
+    % är avrundningsfel. Golvet måste ligga över avrundningsfelen, annars
+    % hoppar vikterna mellan varven och iterationen konvergerar aldrig.
+    floorF = (1e-10*max(sqrt(mean(F.^2)), 1))^2;
+    floorG = (1e-10*max(sqrt(mean(S.^2)), 1))^2;
 
     for k = 1:maxIter
 
