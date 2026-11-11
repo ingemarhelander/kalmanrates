@@ -3,9 +3,9 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %
 % Ska ersätta line_search.m när den är klar, och har därför samma in- och utdata.
 % Varje varv: utvärdera en ny punkt, anpassa ML-polynomet (ml_poly_main) och
-% hitta nästa steglängd alphaHat. Stoppar om evaluate säger till eller när
-% maxEvals punkter är utvärderade.
-% Returnerar den utvärderade punkt som har störst anpassat värde p(alpha_j).
+% hitta nästa steglängd alphaHat. Stoppar när evaluate säger till
+% (komponent 10) eller när maxEvals punkter är utvärderade.
+% Returnerar den giltiga utvärderade punkt som har störst uppmätt F.
 %
 % Skriver ut en rad per utvärderad punkt.
 %
@@ -13,13 +13,15 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % och steglängden för varje punkt i evals.A (startpunkten har 0).
 
     maxEvals = 20;     % högsta antal nya punkter per sökriktning
+    opts.dMinRel = 1e-3;  % minsta avstånd till en utvärderad punkt, relativt största steget (Req. 31)
+    opts.c       = 0.5;   % stopp när |f'_j| <= c |f'_0| (lutningen har planat ut)
 
     evals.X = x;  evals.F = f;  evals.G = g;
     alphas = 0;                              % steglängd för varje kolumn i evals
     alphaNew = initial_step_length(g, d);      % första nya punkten (Req. 22)
     alphaMax = 1;                            % trust region (0, alphaMax]
     qPrev = [];                              % grad från förra varvet (hysteres)
-    fit = [];                                % anpassning till alla giltiga punkter
+    stop = false;                            % true när evaluate stoppat sökningen
 
     for k = 1:maxEvals
         xTry = x + alphaNew*d;
@@ -44,22 +46,23 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         isBetter = isfinite(fTry) && fTry > f;
         [alphaHat, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
 
-        % Stoppkriterier, prövas innan alphaHat utvärderas
-        if evaluate(fit, alphaHat, alphas, ok)
+        % Stoppkriterier (komponent 10), prövas innan alphaHat utvärderas
+        [stop, reason] = evaluate(fit, alphaHat, alphas, ok, evals.F, gTry'*d, g'*d, opts);
+        if stop
+            fprintf('    line search stop: %s\n', reason);
             break
         end
         alphaNew = alphaHat;
     end
-
-    % Returnera den giltiga punkt som har störst anpassat värde p(alpha_j),
-    % som påverkas mindre av brus än F. fit bygger alltid på alla giltiga
-    % punkter. Utan anpassning (färre än två giltiga punkter): startpunkten.
-    j = 1;
-    if ~isempty(fit)
-        ok = find(isfinite(evals.F) & all(isfinite(evals.G), 1));
-        [~, i] = max(poly_value(fit, alphas(ok)));
-        j = ok(i);
+    if ~stop
+        fprintf('    line search stop: maxEvals = %d punkter utvärderade\n', maxEvals);
     end
+
+    % Returnera den giltiga punkt som har störst uppmätt F. Startpunkten är
+    % med, så utan förbättring returneras den.
+    ok = find(isfinite(evals.F) & all(isfinite(evals.G), 1));
+    [~, i] = max(evals.F(ok));
+    j = ok(i);
     alpha = alphas(j);
     xNew = evals.X(:, j);
     fNew = evals.F(j);
