@@ -11,7 +11,8 @@ laptops när simhall-datorn är upptagen. Samma kod kan använda hela historiken
 
 **C++-kompilator och Boost behövs bara för att bygga om MEX-filerna.** För att
 köra koden använder gruppen färdigkompilerade filer. **Isak ansvarar för bygget
-och det delade MEX-paketet.** Kollegorna behöver normalt inte bygga om något.
+och det delade MEX-paketet.** Paketet finns på Google Drive i `TATA85/kod`.
+Kollegorna behöver normalt inte bygga om något.
 
 De ursprungliga MEX-filerna kommer från Jörgen. I det uppdaterade paketet är
 `mexPortfolio` oförändrad, medan Kalman-filen har byggts om för AD-fixen och
@@ -26,10 +27,11 @@ testhjälparen är ny. Använd därför det uppdaterade paketet från Isak.
 2. Klona projektet och välj branchen `issue-1-komprimera-data`, eller hämta
    senaste ändringarna om projektet redan finns lokalt.
 3. Hämta `EUR.mat`, `EUR100.mat`, `kalmanDebug.mat` och `kalmanXoptAll.mat`
-   från gruppens Google Drive (Projekt TATA85/Kod) och lägg dem i `data/`.
+   från gruppens Google Drive (`TATA85/kod`) och lägg dem i `data/`.
    Excel-filerna i `data/raw/` följer med Git och behövs vid initiering.
-4. Hämta det **uppdaterade MEX-paketet från Isak** och packa upp
-   det i projektmappen. Följande filer ska hamna på dessa platser:
+4. Hämta **`kalmanrates-mex-win64-R2026b-20261111.zip`** från Google Drive i
+   **`TATA85/kod`** och packa upp det i projektmappen. Följande filer ska hamna
+   på dessa platser:
    - `mex/mexKalmanLogLikelihood.mexw64` – den omkompilerade modellen med AD-fixen.
    - `mex/mexPortfolio.mexw64` – Jörgens befintliga instrumentbibliotek.
    - `tests/mex/testAdCountsMex.mexw64` – testhjälparen.
@@ -53,12 +55,10 @@ För `kalmanOptimizeMatlab` med `fmincon` behövs Optimization Toolbox;
 
 **Git innehåller inte MEX-filerna eller MAT-datafilerna.** Enbart `git pull`
 räcker därför inte för en ny dator eller när en ny MEX-version har byggts.
-Den gamla modellbinären från Drive innehåller inte AD-fixen. Isak ansvarar för
-att dela det uppdaterade paketet via gruppens Drive; det publiceras inte
-automatiskt när kod pushas till GitHub.
-Ett lokalt paket för delning finns i `dist/kalmanrates-mex-win64-R2026b-20261111.zip`
-på datorn där denna version förbereddes. Paketet innehåller de tre MEX-filerna
-och bygginformation, men inga datafiler. Isak ansvarar för att lägga det på Drive.
+Den gamla modellbinären från Drive innehåller inte AD-fixen; använd ZIP-paketet
+i `TATA85/kod`. Paketet innehåller de tre MEX-filerna och bygginformation, men
+inga datafiler. Isak ansvarar för paketet på Drive. Framtida MEX-uppdateringar
+behöver delas där separat; de publiceras inte automatiskt när kod pushas till GitHub.
 
 Om MATLAB rapporterar saknade `MSVCP`-/`VCRUNTIME`-DLL-filer kan Microsoft
 Visual C++ Redistributable för x64 behövas; själva kompilatorn behövs inte för körning.
