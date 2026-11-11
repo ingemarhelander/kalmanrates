@@ -1,15 +1,31 @@
-function report = checkMexRegression(mode, referenceFile)
+function report = checkMexRegression(mode, referenceFile, limits)
 % Save old-MEX results before rebuilding, then verify the new MEX against them.
-% Run on the full-data computer: this explicitly checks 100/250/500/all dates.
+% Defaults to modelRunConfig.maxObservations, so laptop checks stay small.
 %   checkMexRegression('baseline')
 %   compileMex
 %   checkMexRegression('verify')
+% On the full-data computer, opt in to all sizes using the third argument:
+%   checkMexRegression('baseline', 'fullReference.mat', [100 250 500 Inf])
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 if nargin < 1
   mode = 'verify';
 end
-if nargin < 2
-  referenceFile = dataPath('adCountReference.mat');
+if nargin < 3 || isempty(limits)
+  config = modelRunConfig();
+  limits = config.maxObservations;
+end
+validateattributes(limits, {'numeric'}, {'real','vector','nonempty','positive','nonnan'});
+assert(all(isinf(limits) | limits == fix(limits)), ...
+    'kalmanrates:InvalidRegressionLimits', 'Limits must be positive integers or Inf.');
+limits = limits(:)';
+if nargin < 2 || isempty(referenceFile)
+  if isscalar(limits) && isfinite(limits)
+    referenceFile = dataPath(sprintf('adCountReference_sample%d.mat', limits));
+  elseif isscalar(limits)
+    referenceFile = dataPath('adCountReference_all.mat');
+  else
+    referenceFile = dataPath('adCountReference.mat');
+  end
 end
 sourceFile = dataPath('kalmanDebug.mat');
 root = fileparts(fileparts(mfilename('fullpath')));
@@ -32,14 +48,14 @@ switch mode
     saved = load(sourceFile, 'K');
     optima = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
     parameters = optima.xOptAll(:,1);
-    assert(saved.K.nt >= 500, 'kalmanrates:InsufficientRegressionHistory', ...
-        'At least 500 dates are required to distinguish the sample sizes.');
+    assert(saved.K.nt > 0, 'kalmanrates:InsufficientRegressionHistory', ...
+        'The saved model must contain observations.');
     clear saved optima
     reference.version = 1;
     reference.parameters = parameters;
     reference.sourceStamp = sourceStamp;
     reference.binaryStamp = binaryStamp;
-    reference.limits = [100 250 500 Inf];
+    reference.limits = limits;
     reference.results = cell(size(reference.limits));
     for i=1:numel(reference.limits)
       reference.results{i} = evaluateCase(sourceFile, parameters, reference.limits(i), false);
@@ -53,6 +69,9 @@ switch mode
     reference = saved.reference;
     assert(reference.version == 1, 'kalmanrates:ReferenceVersion', ...
         'Unsupported regression reference version.');
+    assert(isequal(reference.limits(:)', limits), ...
+        'kalmanrates:RegressionLimitsChanged', ...
+        'Pass the same limits used for the baseline. Full history requires explicit opt-in.');
     assert(isequal(sourceStamp, reference.sourceStamp), ...
         'kalmanrates:RegressionInputChanged', ...
         'kalmanDebug.mat changed since the baseline was recorded.');
@@ -75,7 +94,10 @@ switch mode
       assertClose(current.gradient, previous.gradient, 'baseline gradient');
       report{i} = current;
     end
-    fprintf('All sample sizes match the baseline; the 250-date gradient checks passed.\n');
+    fprintf('All selected sample sizes match the baseline.\n');
+    if any(reference.limits == 250)
+      fprintf('The 250-date central-difference gradient checks passed.\n');
+    end
 
   otherwise
     error('kalmanrates:RegressionMode', 'Use baseline or verify.');
@@ -101,6 +123,8 @@ K.Sigma0 = parameters(edges(5)+1:edges(6));
 K.Ef(:) = parameters(edges(6)+1:edges(7));
 
 % Capture the native diagnostic where MATLAB redirects it to the command window.
+f = NaN;
+gradient = [];
 output = evalc('[f, gradient] = kalmanObj(parameters, K, 0);');
 if ~isempty(output)
   fprintf('%s', output);
