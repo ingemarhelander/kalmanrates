@@ -4,35 +4,83 @@ Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter.
 
 ## Kom igång
 
-1. Klona ned projektet med `git clone`.
-2. Hämta datafilerna (markerade med \*) separat från Google Drive (Projekt TATA85/Kod):
-   - `.mat`-filerna läggs i `data/`
-   - `.mexw64`-filerna läggs i `mex/`
+Syftet med branchen är att alla i gruppen ska kunna testa med 250 dagar på sina
+laptops när simhall-datorn är upptagen. Samma kod kan använda hela historiken på simhall.
 
-   De ignoreras av git och ska inte laddas upp på GitHub pga storlek (behövs bara göras en gång).
-3. Testa kör skripten i `scripts/`, t.ex. `runReducedIrCurvesV2`. Varje skript anropar `setupPaths` automatiskt, som lägger alla projektmappar på MATLAB-sökvägen. Om du kör delar av koden manuellt, kör `setupPaths` först.
+## Varje kollega: kör 250 dagar på din laptop
 
+**C++-kompilator och Boost behövs bara för att bygga om MEX-filerna.** För att
+köra koden kan ni dela färdigkompilerade filer. En person kan bygga dem åt gruppen.
 
-## Hur man gör för att köra koden på sin egen laptop
+1. Installera MATLAB. Det delade paketet är verifierat på **64-bitars Windows
+   med MATLAB R2026b**. För äldre MATLAB-versioner behöver en person bygga och
+   testa motsvarande filer i den versionen. Version och plattform kan kontrolleras
+   med `version('-release')` och `computer('arch')` (R2026b respektive win64).
+   Mac/Linux kräver egna MEX-filer, även för Jörgens `mexPortfolio`, vars källkod
+   inte finns i projektet.
+2. Klona projektet och välj branchen `issue-1-komprimera-data`, eller hämta
+   senaste ändringarna om projektet redan finns lokalt.
+3. Hämta `EUR.mat`, `EUR100.mat`, `kalmanDebug.mat` och `kalmanXoptAll.mat`
+   från gruppens Google Drive (Projekt TATA85/Kod) och lägg dem i `data/`.
+   Excel-filerna i `data/raw/` följer med Git och behövs vid initiering.
+4. Hämta det **uppdaterade MEX-paketet** från den som byggt det och packa upp
+   det i projektmappen. Följande filer ska hamna på dessa platser:
+   - `mex/mexKalmanLogLikelihood.mexw64` – den omkompilerade modellen med AD-fixen.
+   - `mex/mexPortfolio.mexw64` – Jörgens befintliga instrumentbibliotek.
+   - `tests/mex/testAdCountsMex.mexw64` – testhjälparen.
+5. Behåll `config.maxObservations = 250` i `modelRunConfig.m` och kör följande
+   i MATLAB från projektmappen:
 
-I `modelRunConfig.m` styr `config.maxObservations` hur mycket data som används:
+```matlab
+setupPaths
+clear mexKalmanLogLikelihood testAdCountsMex
+which mexKalmanLogLikelihood -all
+results = runtests('tests');
+assertSuccess(results)
+kalmanOptimizeMain
+```
 
-- `250` (standard): de första 250 handelsdagarna för snabbare tester.
-- `Inf`: all data för körning på simhall-datorn.
+`which` ska visa modellfilen i projektets egen `mex/`-mapp. De sju testerna
+kräver inga extra toolboxar. För initiering och RTS (`runReducedIrCurvesV2`
+och `checkLaptopSample`) behövs Statistics and Machine Learning Toolbox.
+För `kalmanOptimizeMatlab` med `fmincon` behövs Optimization Toolbox;
+`kalmanOptimizeMain` och `kalmanOptimizeSD` använder inte `fmincon`.
 
-Inställningen gäller både `runReducedIrCurvesV2` och de tre optimeringsskripten.
-Kör dem som vanligt. Modellen behåller samma uppbyggnad, men använder färre dagar.
-Resultat från korta körningar får tillägget `_sample250` (eller valt antal dagar)
-så att de inte skriver över resultaten från en full körning.
+**Git innehåller inte MEX-filerna eller MAT-datafilerna.** Enbart `git pull`
+räcker därför inte för en ny dator eller när en ny MEX-version har byggts.
+Den gamla modellbinären från Drive innehåller inte AD-fixen. Dela det nya paketet
+via gruppens Drive; det publiceras inte automatiskt när kod pushas till GitHub.
+Ett lokalt paket för delning finns i `dist/kalmanrates-mex-win64-R2026b-20261111.zip`
+på datorn där denna version förbereddes. Paketet innehåller de tre MEX-filerna
+och bygginformation, men inga datafiler. Det behöver läggas på Drive av gruppen.
 
-Hela datafiler kan fortfarande behöva läsas in innan urvalet görs.
+Om MATLAB rapporterar saknade `MSVCP`-/`VCRUNTIME`-DLL-filer kan Microsoft
+Visual C++ Redistributable för x64 behövas; själva kompilatorn behövs inte för körning.
+Se [MathWorks om saknade runtime-bibliotek](https://www.mathworks.com/help/matlab/matlab_external/invalid-mex-file-error.html).
+Kör helst med samma MATLAB-release som paketet byggdes med:
+[versionskompatibilitet](https://www.mathworks.com/help/matlab/matlab_external/version-compatibility.html).
 
-## Kontrollera ändringarna
+## Kör hela historiken på simhall-datorn
 
-Kör följande i MATLAB från projektmappen. Kompileringen kräver en konfigurerad
-C++-kompilator och uppackade Boost-filer. `compileMex` använder `BOOST_ROOT` om
-den miljövariabeln är satt, annars `%USERPROFILE%/Documents/boost_1_67_0`.
-En annan sökväg kan anges med `compileMex('C:/sokvag/till/boost_1_67_0')`.
+1. Hämta samma branch och se till att data och en uppdaterad MEX-version finns
+   även där. Kontrollera MATLAB-versionen; paketet ovan är byggt för R2026b.
+   Är versionen äldre behöver en person bygga MEX-filerna med den versionen.
+2. Ändra **lokalt på simhall** till `config.maxObservations = Inf` i
+   `modelRunConfig.m`. Låt branchens gemensamma standard vara 250 dagar.
+3. Kör `setupPaths` och exempelvis `kalmanOptimizeMain` i MATLAB som vanligt.
+   Inställningen gäller även de andra optimeringsskripten och `runReducedIrCurvesV2`.
+
+Korta körningar får resultatnamn med `_sample250` (eller valt antal dagar).
+Fulla körningar använder de ursprungliga resultatnamnen. Hela datafiler kan
+fortfarande behöva läsas in även när bara 250 dagar används.
+
+## Bara den som bygger nya MEX-filer: C++ och Boost
+
+Detta behövs vid C++-ändringar eller om gruppen behöver binärer för en annan
+MATLAB-version. Installera en kompatibel C++-kompilator och hämta Boost.
+Det lokala bygget har verifierats med MSVC 2022 och Boost 1.67.0.
+`compileMex` använder `BOOST_ROOT` om den miljövariabeln är satt, annars
+`%USERPROFILE%/Documents/boost_1_67_0`. Annan sökväg kan anges som argument.
 Spara referensen med den gamla MEX-filen **innan** den kompileras om:
 
 ```matlab
@@ -53,9 +101,10 @@ Flera storlekar kan väljas med ett tredje argument, exempelvis
 `checkMexRegression('baseline', dataPath('fullReference.mat'), [100 250 500 Inf])`.
 Använd samma fil och storlekar med `'verify'`. Välj hela historiken på den starkare datorn.
 
-`checkLaptopSample` testar även ett RTS-steg och kräver Statistics and Machine
-Learning Toolbox. `kalmanOptimizeMatlab` kräver dessutom Optimization Toolbox
-för `fmincon`; de egna optimeringsskripten använder inte `fmincon`.
+Efter godkända kontroller delar byggansvarig de tre MEX-filerna ovan, tillsammans
+med MATLAB-release och plattform, via gruppens Drive. Övriga behöver då inte
+installera Boost eller en C++-kompilator och behöver inte köra `compileMex`
+eller jämförelsen mellan gamla och nya binärer.
 
 Lokalt verifierat 2026-11-11 med MATLAB R2026b, MSVC 2022 och Boost 1.67.0:
 alla sju MATLAB-tester passerar. För 250 dagar är målfunktion och gradient
@@ -129,6 +178,7 @@ kalmanrates/
 ├── measurement/      instrumentklasser och dataladdning
 ├── data/             .mat-filer (*), raw/ innehåller Excel-rådata
 ├── tests/            tester för dataurval och PCA
+├── dist/             lokalt MEX-paket för delning, ignoreras av Git
 └── docs/             dokument och figurer
 ```
 
