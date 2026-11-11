@@ -7,25 +7,32 @@
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 
-[K, mu, maxIter, varInd, xLbd, x] = setup_problem();
-noisy_size = 3; % Dimension of noisy subspace
+config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+
+maxIter = config.maxIter; % Maximum number of iterations
+mu = config.mu;
+noisy_size = config.noisy_size; % Dimension of noisy subspace
+
+[K, varInd, xLbd, x] = setup_problem();
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];          % Last noisy_size search directions (one per column)
+evalHist = {};   % History of line search evaluations
 iter = 1;
 
 while true
     history = update_history(history, x, f, g);
 
     %Find search direction d
-    d = find_search_direction(x, g, xLbd);
+    d = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew] = line_search(x, f, g, d, K, mu, varInd);
+    [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varInd);
 
     %Print and update history
     print_iteration(iter, alpha, f, fNew, g, gNew);
     history.stepSizes(end+1, 1) = alpha;
+    evalHist = store_evals(evalHist, evals, noisy_size);
 
     %Iteration done, update counter and x f and g
     [x, f, g] = update_step(xNew, fNew, gNew);
@@ -39,7 +46,14 @@ while true
     %Make sure the last search direction is stored and run noisy optimization
     D = store_direction(D, d, noisy_size);
     if iter > noisy_size
-        [x, f, g] = noisy_optimization(x, f, g, D, noisy_size, K, mu, varInd, xLbd);
+        d_prime = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, config);
+        if ~any(d_prime)
+            fprintf('Denoising produced no feasible direction; skipping its line search.\n');
+        else
+            [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d_prime, K, mu, varInd);
+            [x, f, g] = update_step(xNew, fNew, gNew);
+        end
+        fprintf('Denoising done \n')
     end
 
     %Check if current step fulfills stop criterion.
@@ -77,16 +91,22 @@ function D = store_direction(D, d, noisy_size)
     end
 end
 
+function evalHist = store_evals(evalHist, evals, noisy_size)
+% Keeps the evaluations (x, f, g) of the noisy_size most recent steps.
+% evalHist{k} belongs to step k of the window (oldest first), so it lines
+% up with the columns of D.
+
+    evalHist{end+1} = evals;
+    if numel(evalHist) > noisy_size
+        evalHist = evalHist(end-noisy_size+1:end);
+    end
+end
+
 %% Help function given by Jörgen.
 
-function [K, mu, maxIter, varInd, xLbd, x] = setup_problem()
+function [K, varInd, xLbd, x] = setup_problem()
 % Loads data, sets the starting point, selects which variables to optimize
 % and builds the lower bounds for them.
-
-    maxIter = 100;
-    % mu = 1E-4;
-    % mu = 1E-8;
-    mu = 1E-2;
 
     K = loadKalmanSample();
 
@@ -157,4 +177,48 @@ function history = update_history(history, x, f, g)
     history.normOftravelledDistances(end+1, 1) = norm(history.xInit - x);
     history.xs(:, end+1) = x;
     history.grads(:, end+1) = g;
+end
+
+function config = read_config(configPath)
+% Reads key/value rows into a struct. Blank lines and lines beginning with
+% # or % are ignored.
+
+    fid = fopen(configPath, 'r');
+    if fid == -1
+        error('Could not open config file: %s', configPath);
+    end
+    cleanup = onCleanup(@() fclose(fid));
+    config = struct();
+
+    while true
+        line = fgetl(fid);
+        if ~ischar(line)
+            break;
+        end
+        line = strtrim(line);
+        if isempty(line) || startsWith(line, '#') || startsWith(line, '%')
+            continue;
+        end
+
+        tokens = regexp(line, '^([A-Za-z]\w*)\s+(.+)$', 'tokens', 'once');
+        if isempty(tokens) || ~isvarname(tokens{1})
+            error('Invalid config row: %s', line);
+        end
+
+        key = tokens{1};
+        valueText = strtrim(tokens{2});
+        if strcmpi(valueText, 'true')
+            value = true;
+        elseif strcmpi(valueText, 'false')
+            value = false;
+        else
+            numericValue = str2double(valueText);
+            if ~isnan(numericValue) || strcmpi(valueText, 'nan')
+                value = numericValue;
+            else
+                value = valueText;
+            end
+        end
+        config.(key) = value;
+    end
 end
