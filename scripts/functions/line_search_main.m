@@ -3,44 +3,71 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %
 % Ska ersätta line_search.m när den är klar, och har därför samma in- och utdata.
 % Varje varv: utvärdera en ny punkt, välj polynomgrad, anpassa polynomet och
-% hitta nästa steglängd. Klart när ett polynomsteg ger en förbättring.
+% hitta nästa steglängd alphaHat. Stoppar (komponent 10) om
+%   - alphaHat ligger för nära en redan utvärderad punkt (Req. 31),
+%   - den förutsagda ökningen p(alphaHat) - max_j p(alpha_j) är mindre än bruset,
+%   - maxEvals punkter är utvärderade.
+% Returnerar den utvärderade punkt som har störst anpassat värde p(alpha_j).
 %
-% evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G).
+% Skriver ut en rad per utvärderad punkt.
+%
+% evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G),
+% och steglängden för varje punkt i evals.A (startpunkten har 0).
 
-    maxEvals = 20;   % högsta antal nya punkter
+    maxEvals = 20;     % högsta antal nya punkter
+    dMinRel  = 1e-3;   % minsta avstånd till en utvärderad punkt, relativt största steget (Req. 31)
 
     evals.X = x;  evals.F = f;  evals.G = g;
     alphas = 0;                              % steglängd för varje kolumn i evals
     alphaNew = first_step_length(g, d);      % första nya punkten (Req. 22)
     alphaMax = 1;                            % trust region (0, alphaMax]
     qPrev = [];                              % grad från förra varvet (hysteres)
+    fit = [];                                % anpassning till alla giltiga punkter
 
     for k = 1:maxEvals
         xTry = x + alphaNew*d;
         [fTry, gTry] = kalmanObj(xTry, K, mu, varInd);
         evals.X(:, end+1) = xTry;  evals.F(end+1) = fTry;  evals.G(:, end+1) = gTry;
         alphas(end+1) = alphaNew; %#ok<AGROW>
+        fprintf('    line search eval %2d: alpha = %.4e, f-f0 = %+.4e, f'' = %+.4e\n', ...
+                k, alphaNew, fTry - f, gTry'*d);
 
-        % Första punkten godkänns inte direkt, annars blir det backtracking
-        isBetter = isfinite(fTry) && fTry > f;
-        if k > 1 && isBetter
-            break
-        end
-
-        % Punkter med NaN eller Inf tas inte med i anpassningen
+        % Punkter med NaN eller Inf tas inte med i anpassningen (Req. 42).
+        % En sådan punkt är aldrig en förbättring: halvera steget och krymp
+        % trust region, så att polynomsteget inte går tillbaka dit.
         ok = isfinite(evals.F) & all(isfinite(evals.G), 1);
-        if sum(ok) < 2
-            alphaNew = alphaNew/2;           % bara startpunkten är giltig: korta steget
+        if ~ok(end) || sum(ok) < 2
+            alphaNew = alphaNew/2;
+            alphaMax = min(alphaMax, alphaNew);
             continue
         end
         [qPrev, fit] = select_poly_degree(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev);
-        [alphaNew, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
+
+        % isBetter styr bara trust region i find_step_length, inte när vi stoppar
+        isBetter = isfinite(fTry) && fTry > f;
+        [alphaHat, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
+
+        % Stoppkriterier, prövas innan alphaHat utvärderas
+        % Relativt stegen och inte alphaMax, som kan vara mycket större än stegen
+        if min(abs(alphaHat - alphas)) < dMinRel*max(alphas)
+            break                            % för nära en utvärderad punkt (Req. 31)
+        end
+        % fit.sigmaF är ~0 vid exakt anpassning. Då stoppar bara de andra kriterierna.
+        if poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < fit.sigmaF
+            break                            % förutsagd ökning mindre än bruset
+        end
+        alphaNew = alphaHat;
     end
 
-    % Returnera den bästa giltiga punkten, startpunkten om ingen är bättre
-    F = evals.F;
-    F(~(isfinite(F) & all(isfinite(evals.G), 1))) = -Inf;
-    [~, j] = max(F);
+    % Returnera den giltiga punkt som har störst anpassat värde p(alpha_j),
+    % som påverkas mindre av brus än F. fit bygger alltid på alla giltiga
+    % punkter. Utan anpassning (färre än två giltiga punkter): startpunkten.
+    j = 1;
+    if ~isempty(fit)
+        ok = find(isfinite(evals.F) & all(isfinite(evals.G), 1));
+        [~, i] = max(poly_value(fit, alphas(ok)));
+        j = ok(i);
+    end
     alpha = alphas(j);
     xNew = evals.X(:, j);
     fNew = evals.F(j);
