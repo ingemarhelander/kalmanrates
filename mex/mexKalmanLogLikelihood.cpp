@@ -8,14 +8,11 @@
 #include "boost/numeric/ublas/matrix.hpp"
 #include "boost/numeric/ublas/io.hpp"
 #include "boost/lexical_cast.hpp"
-//#include "XiMath/boostHelper.h"
-//#include "XiMath/sparseMatrix.h"
 #include "kalmanLogLikelihoodAd.h"
 //#include "mexConvertTypes.hpp"
 
 
 using namespace boost::numeric::ublas;
-using namespace XiMath;
 using namespace XiFin;
 using namespace matlab::mex;
 using namespace matlab::data;

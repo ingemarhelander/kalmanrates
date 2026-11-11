@@ -5,16 +5,9 @@
 #include "boost/numeric/ublas/matrix.hpp"
 #include "boost/numeric/ublas/io.hpp"
 #include "boost/lexical_cast.hpp"
-//#include "XiMath/boostHelper.h"
-#include "XiMath/sparseMatrix.h"
-//#include "XiMath/iomatlab.h"
-
-// This header is also included directly, without other finance headers.
-namespace XiMath {}
-namespace XiFin {}
+#include "sparseMatrix.h"
 
 using namespace boost::numeric::ublas;
-using namespace XiMath;
 using namespace XiFin;
 
 #ifndef KALMANLOGLIKELIHOODAD_H
@@ -3865,7 +3858,7 @@ public:
 
       const std::size_t m = L.size1();
 
-      T ft = -0.5*m*log(2*M_PI);
+      T ft = -0.5*m*log(2*acos(-1.0)); // Portable pi; M_PI is not standard C++.
 
       T dot = 0;
       for (std::size_t i=0 ; i<m ; i++)
@@ -3902,7 +3895,7 @@ public:
 
       const std::size_t m = L.size1();
 
-      T ft = -0.5*m*log(2*M_PI);
+      T ft = -0.5*m*log(2*acos(-1.0));
 
       T dot = 0;
       for (std::size_t i=0 ; i<m ; i++)
