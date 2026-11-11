@@ -3,7 +3,7 @@ function [alphaNew, alphaMax] = find_step_length(fit, alphaPrev, alphaMax, isBet
 %
 % TILLFÄLLIG VERSION: söker polynomets max på ett rutnät, bara för att
 % line_search_main ska gå att köra. Antar att fit.y är
-% koefficienterna för 1, alpha, alpha^2, ... som i den tillfälliga poly_fit_ml.
+% koefficienterna för 1, alpha, alpha^2, ... som i poly_fit_ml.
 %
 % In:
 %   fit        anpassningen från poly_fit_ml

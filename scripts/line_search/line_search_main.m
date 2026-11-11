@@ -2,11 +2,9 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % line_search_main - Linjesökning med polynom (designspec 5.2.4).
 %
 % Ska ersätta line_search.m när den är klar, och har därför samma in- och utdata.
-% Varje varv: utvärdera en ny punkt, välj polynomgrad, anpassa polynomet och
-% hitta nästa steglängd alphaHat. Stoppar (komponent 10) om
-%   - alphaHat ligger för nära en redan utvärderad punkt (Req. 31),
-%   - den förutsagda ökningen p(alphaHat) - max_j p(alpha_j) är mindre än bruset,
-%   - maxEvals punkter är utvärderade.
+% Varje varv: utvärdera en ny punkt, anpassa ML-polynomet (ml_poly_main) och
+% hitta nästa steglängd alphaHat. Stoppar om evaluate säger till eller när
+% maxEvals punkter är utvärderade.
 % Returnerar den utvärderade punkt som har störst anpassat värde p(alpha_j).
 %
 % Skriver ut en rad per utvärderad punkt.
@@ -15,7 +13,6 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % och steglängden för varje punkt i evals.A (startpunkten har 0).
 
     maxEvals = 20;     % högsta antal nya punkter per sökriktning
-    dMinRel  = 1e-3;   % minsta avstånd till en utvärderad punkt, relativt största steget (Req. 31)
 
     evals.X = x;  evals.F = f;  evals.G = g;
     alphas = 0;                              % steglängd för varje kolumn i evals
@@ -41,20 +38,15 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             alphaMax = min(alphaMax, alphaNew);
             continue
         end
-        [qPrev, fit] = select_poly_degree(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev);
+        [qPrev, fit] = ml_poly_main(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev);
 
         % isBetter styr bara trust region i find_step_length, inte när vi stoppar
         isBetter = isfinite(fTry) && fTry > f;
         [alphaHat, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
 
         % Stoppkriterier, prövas innan alphaHat utvärderas
-        % Relativt stegen och inte alphaMax, som kan vara mycket större än stegen
-        if min(abs(alphaHat - alphas)) < dMinRel*max(alphas)
-            break                            % för nära en utvärderad punkt (Req. 31)
-        end
-        % fit.sigmaF är ~0 vid exakt anpassning. Då stoppar bara de andra kriterierna.
-        if poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < fit.sigmaF
-            break                            % förutsagd ökning mindre än bruset
+        if evaluate(fit, alphaHat, alphas, ok)
+            break
         end
         alphaNew = alphaHat;
     end

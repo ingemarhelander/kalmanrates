@@ -35,7 +35,7 @@ function [q, fit] = select_poly_degree(alpha, F, S, qPrev)
     end
 
     for q = qMin:qMax
-        fit = poly_fit_ml(alpha, F, S, q);
+        fit = poly_fit_ml(alpha, F, S, q, false);   % false: inga figurer
         r = [fit.rF(:), fit.rG(:)];
         % Exakt anpassning: residualerna är bara avrundningsfel
         isExact = norm(r(:)) <= 1e-10*norm([F - mean(F); S]);
