@@ -4,6 +4,7 @@
 % q = 2, 3, ... och ritar en figur per grad: mätpunkterna, det anpassade
 % polynomet och residualerna som streck från kurvan till punkterna
 % (rött = punkten ovanför kurvan, blått = nedanför).
+% Om graden höjs för långt (5 eller 6) är det slumpen: byt frö i rng.
 %
 % För låg grad: punkterna ligger i klumpar ovanför eller nedanför kurvan
 % (+ + + - - - + +), grannar har samma tecken och rho är stort.
@@ -17,16 +18,26 @@ close all;
 
 addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts', 'line_search'));
 
-% Mockdata: 10 punkter av ett fjärdegradspolynom med brus
+% Mockdata: 12 punkter av ett fjärdegradspolynom med brus.
+% Med färre punkter syns mönstret för dåligt: residualerna för grad q byter
+% tecken minst q+1 gånger, så med t.ex. 10 punkter blir klumparna så korta
+% att rho inte skiljer sig från brus och graden aldrig höjs.
 rng(1);
-m = 10;
+m = 12;
 alpha = linspace(0, 1, m)';
 
-F_true = @(a) 1 - 2*a + 12*a.^2 - 20*a.^3 + 10*a.^4;
-S_true = @(a) -2 + 24*a - 60*a.^2 + 40*a.^3;
+F_true = @(a) 1 - 4*a.^3 + 5*a.^4;
+S_true = @(a) -12*a.^2 + 20*a.^3;
 
-F = F_true(alpha) + 0.01*randn(m, 1);
-S = S_true(alpha) + 0.05*randn(m, 1);
+F = F_true(alpha) + 0.003*randn(m, 1);
+S = S_true(alpha) + 0.015*randn(m, 1);
+
+% Färger som syns på både ljus och mörk bakgrund
+red    = [1.0 0.3 0.3];
+blue   = [0.3 0.6 1.0];
+orange = [1.0 0.6 0.0];
+green  = [0.2 0.8 0.2];
+gray   = [0.6 0.6 0.6];
 
 alphaPlot = linspace(0, 1, 300)';
 
@@ -46,16 +57,16 @@ for q = 2:6
     % Residualer: streck från kurvan till punkten
     for j = 1:m
         if fit.rF(j) >= 0
-            color = 'r';
+            color = red;
         else
-            color = 'b';
+            color = blue;
         end
-        plot([alpha(j) alpha(j)], [p(j) F(j)], color, 'LineWidth', 2);
+        plot([alpha(j) alpha(j)], [p(j) F(j)], 'Color', color, 'LineWidth', 2);
     end
 
-    hTrue = plot(alphaPlot, F_true(alphaPlot), 'k--', 'LineWidth', 1);
-    hFit  = plot(alphaPlot, polyval(flipud(fit.y), alphaPlot), 'g-', 'LineWidth', 2);
-    hData = plot(alpha, F, 'ko', 'MarkerFaceColor', 'k');
+    hTrue = plot(alphaPlot, F_true(alphaPlot), '--', 'Color', gray, 'LineWidth', 1);
+    hFit  = plot(alphaPlot, polyval(flipud(fit.y), alphaPlot), '-', 'Color', green, 'LineWidth', 2);
+    hData = plot(alpha, F, 'o', 'Color', orange, 'MarkerFaceColor', orange, 'MarkerSize', 7);
 
     xlabel('Steglängd \alpha');
     ylabel('F');
