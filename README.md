@@ -29,8 +29,10 @@ Hela datafiler kan fortfarande behöva läsas in innan urvalet görs.
 
 ## Kontrollera ändringarna
 
-Kör följande på simhall-datorn i MATLAB från projektmappen. Kompileringen kräver
-en C++-kompilator och Jörgens bibliotek; kontrollera `progDir` i `mex/compileMex.m`.
+Kör följande i MATLAB från projektmappen. Kompileringen kräver en konfigurerad
+C++-kompilator och uppackade Boost-filer. `compileMex` använder `BOOST_ROOT` om
+den miljövariabeln är satt, annars `%USERPROFILE%/Documents/boost_1_67_0`.
+En annan sökväg kan anges med `compileMex('C:/sokvag/till/boost_1_67_0')`.
 Spara referensen med den gamla MEX-filen **innan** den kompileras om:
 
 ```matlab
@@ -41,13 +43,25 @@ which mexKalmanLogLikelihood -all
 results = runtests('tests');
 assertSuccess(results)
 checkMexRegression('verify')   % Jämför gamla och nya resultat
-checkLaptopSample             % Testar initiering och ett RTS-steg
 ```
 
-Referensen sparas i `data/adCountReference.mat`. Om den redan har sparats med
-den gamla MEX-filen, hoppa över `baseline`. Den gamla AD-varningen kan visas
+Verifieringen följer `maxObservations`, alltså 250 dagar som standard.
+Referensen sparas då i `data/adCountReference_sample250.mat`. Om den redan har
+sparats med den gamla MEX-filen, hoppa över `baseline`. Den gamla AD-varningen kan visas
 under referenskörningen, men ska försvinna efter omkompileringen.
-Jämförelsen kör 100, 250, 500 och alla dagar oavsett `maxObservations`.
+Flera storlekar kan väljas med ett tredje argument, exempelvis
+`checkMexRegression('baseline', dataPath('fullReference.mat'), [100 250 500 Inf])`.
+Använd samma fil och storlekar med `'verify'`. Välj hela historiken på den starkare datorn.
+
+`checkLaptopSample` testar även ett RTS-steg och kräver Statistics and Machine
+Learning Toolbox. `kalmanOptimizeMatlab` kräver dessutom Optimization Toolbox
+för `fmincon`; de egna optimeringsskripten använder inte `fmincon`.
+
+Lokalt verifierat 2026-11-11 med MATLAB R2026b, MSVC 2022 och Boost 1.67.0:
+alla sju MATLAB-tester passerar. För 250 dagar är målfunktion och gradient
+identiska med den gamla binärens resultat, gradientkontrollen passerar och
+AD-varningen är borta. Ett söksteg i den egna optimeringen höjer målfunktionen.
+Hela optimeringsloopen och hela historiken är ännu inte verifierade.
 
 ## Ändringar i Jörgens ursprungliga kod
 
@@ -72,15 +86,18 @@ Den ursprungliga koden kommer från Jörgen. På `issue-1-komprimera-data` har f
   bara passade en viss datamängd. Felutskriften visar nu faktiskt och beräknat
   antal separat, utan missvisande osignerade differenser. Minnesreserven behålls.
 - **Uppdaterat MEX-bygge:** projektets lokala AD-header används så att fixen
-  kommer med vid kompilering. `compileMex.m` utgår från sin egen mapp för
-  källfiler och utdata och bygger även testhjälparen. Den nya MEX-filen måste
-  kompileras med MATLAB, en C++-kompilator och handledarens bibliotek.
+  kommer med vid kompilering. Även `sparseMatrix.h` hämtas från projektet.
+  `compileMex.m` bygger modellen och testhjälparen med en C++-kompilator och
+  Boost-headerfiler. De externa XiMath-/XiFin-sökvägarna och länkningen till
+  det gamla kompilerade Boost-biblioteket behövs inte för detta bygge.
+  Pi-konstanten beräknas utan det kompilatorberoende makrot `M_PI`.
 - **Separata resultat:** korta körningar får tillägget `_sample250` (eller
   valt antal dagar), så att resultaten från fulla körningar inte skrivs över.
 - **Nya kontroller:** tester har lagts till för dataurval, PCA och AD-räknaren.
   `checkMexRegression.m` kan spara referensvärden med den gamla binären före
-  omkompilering och jämföra målfunktion och gradient efteråt för 100, 250, 500
-  och alla dagar. Utvalda gradienter kontrolleras även med finita differenser.
+  omkompilering och jämföra målfunktion och gradient efteråt för valt antal
+  dagar. Hela historiken kräver ett uttryckligt val. Utvalda gradienter
+  kontrolleras även med finita differenser för 250 dagar.
 
 ## Koppla till remote datorn
 OBS Endast en person kan använda datorn åt gången.
@@ -291,7 +308,7 @@ De tre optimeringsskripten laddar det ursprungliga sparade Kalman-objektet via `
 - `mexKalmanLogLikelihood.cpp` – MEX-gränssnitt för log-likelihood + gradient
 - `kalmanLogLikelihoodAd.h` – Kalmanfilter med automatisk differentiering
 - `sparseMatrix.h` – gles matrisklass
-- `compileMex.m` – bygger modellen och testhjälparen med projektets lokala AD-header (kräver handledarens bibliotek)
+- `compileMex.m` – bygger modellen och testhjälparen med lokal AD-/matriskod och Boost-headerfiler
 - `mexKalmanLogLikelihood.mexw64` \* – kompilerad version
 - `mexPortfolio.mexw64` \* – handledarens bibliotek för marknadsdata och instrument
 - `old/kalmanLogLikelihoodAd2.h` – äldre version, används inte
@@ -313,7 +330,7 @@ De tre optimeringsskripten laddar det ursprungliga sparade Kalman-objektet via `
 - `kalmanXoptAll.mat` \* – optimerade parametrar
 - `axRtsOpt.mat` \* – starttillstånd från RTS
 - `axRtsOpt_sample250.mat` – motsvarande resultat från en kort körning (antalet dagar styr namnet)
-- `adCountReference.mat` – genererad referens för kontroll av den omkompilerade MEX-filen
+- `adCountReference_sample250.mat` – genererad referens för MEX-kontroll med 250 dagar (namnet följer urvalet)
 
 **docs/**
 
