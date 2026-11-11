@@ -1,14 +1,15 @@
-function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, config)
+function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config)
 % Placeholder: returns x, f, g unchanged.
-    columnNorms = sqrt(sum(abs(D).^2, 1));
+    B = orth(B);  % Ensure B is orthonormal
+    columnNorms = sqrt(sum(abs(B).^2, 1));
 
     %Check that no columns are of length 0.
     if any(columnNorms == 0)
-        error('denoise:ZeroColumnInD', 'D cannot contain zero columns.');
+        error('denoise:ZeroColumnInD', 'B cannot contain zero columns.');
     end
 
-    % Normalize the columns of D to get an orthonormal basis for the span of the past search directions.
-    D = D ./ columnNorms;
+    % Normalize the columns of B to get an orthonormal basis for the span of the past search directions.
+    B = B ./ columnNorms;
 
     fprintf('\nNoisy optimization: last %d search directions \n', noisy_size);
     %fprintf('denoise: evalhist has %d steps, evaluations per step = [%s], total = %d \n', ...
@@ -25,39 +26,39 @@ function d = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, conf
     end
     % Eval j corresponds to X(:,j), F(j) and G(:,j)
 
-    fprintf('[denoise] size(D)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
-        mat2str(size(D)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
+    fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
+        mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
-    [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D, config.fixed_or_exact);
+    [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, config.fixed_or_exact);
 
     % Check that q is finite.
     if any(~isfinite(q))
         error('denoise:NonFiniteDirection', 'The quadratic model produced a non-finite direction.');
     end
 
-    % Compute the search direction d from the quadratic model.
+    % Compute the search direction d_prime from the quadratic model.
     qNorm = norm(q);
     if qNorm == 0
-        d = zeros(size(q));
+        d_prime = zeros(size(q));
         return;
     end
-    d = q / qNorm;
+    d_prime = q / qNorm;
 
-    % Make sure tyhe search direction d is feasible with respect to the lower bounds xLbd.
+    % Make sure tyhe search direction d_prime is feasible with respect to the lower bounds xLbd.
     alphaLbd = ones(size(x)) * inf;
-    hitsBound = (d < 0) & (xLbd ~= -inf);
-    alphaLbd(hitsBound) = -(x(hitsBound) - xLbd(hitsBound)) ./ d(hitsBound);
+    hitsBound = (d_prime < 0) & (xLbd ~= -inf);
+    alphaLbd(hitsBound) = -(x(hitsBound) - xLbd(hitsBound)) ./ d_prime(hitsBound);
     alphaLbdMin = min(alphaLbd);
     if alphaLbdMin < 1
-        d = d * alphaLbdMin * 0.99;
+        d_prime = d_prime * alphaLbdMin * 0.99;
     end
 end
 
 
-function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D, method)
-% Project X and G onto the span of D to get a smaller problem.
-    Z = D' * X;
-    Gsmall = D' * G;
+function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, method)
+% Project X and G onto the span of B to get a smaller problem.
+    Z = B' * X;
+    Gsmall = B' * G;
     fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
         mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
@@ -69,9 +70,9 @@ function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, D, method)
         mat2str(size(Qsmall)), mat2str(size(qsmall)), mat2str(size(c)), mat2str(size(esmall)));
 
     % Transform the small quadratic model back to the original space.
-    Q = D * Qsmall * D';
-    q = D * qsmall;
-    e = [esmall(1, :); D * esmall(2:end, :)];
+    Q = B * Qsmall * B';
+    q = B * qsmall;
+    e = [esmall(1, :); B * esmall(2:end, :)];
 end
 
 
@@ -129,9 +130,9 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
     % Step 1: Compact notation
     % ------------------------------------------------------------------
 
-    % --- 1a. Duplication matrix D, defined by vec(Q) = D * vech(Q) -----
+    % --- 1a. Duplication matrix B, defined by vec(Q) = B * vech(Q) -----
     % vech stacks the lower triangle of Q column by column.
-    D = zeros(n * n, nVech);
+    B = zeros(n * n, nVech);
 
     k = 0;                                % running index into vech(Q)
     for col = 1:n
@@ -145,8 +146,8 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
             idxUpper = (row - 1) * n + col;
 
             % Both positions in vec(Q) take their value from vech(Q)(k)
-            D(idxLower, k) = 1;
-            D(idxUpper, k) = 1;
+            B(idxLower, k) = 1;
+            B(idxUpper, k) = 1;
         end
     end
 
@@ -160,11 +161,11 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
 
         dx = deltaX(:, i);       % dx_i as a column vector
 
-        % ---- a_i = [ D' * vec(1/2 dx dx') ; dx ; 1 ] ----
+        % ---- a_i = [ B' * vec(1/2 dx dx') ; dx ; 1 ] ----
         outerProduct = dx * dx';                  % n x n matrix dx dx'
         halfOuter    = 0.5 * outerProduct;        % 1/2 dx dx'
         halfOuterVec = halfOuter(:);              % vec(.), n^2 x 1
-        topPart      = D' * halfOuterVec;         % nVech x 1
+        topPart      = B' * halfOuterVec;         % nVech x 1
 
         a_i = [ topPart ;
                 dx      ;
@@ -172,11 +173,11 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
 
         a_all(:, i) = a_i;
 
-        % ---- A_i = [ Atilde_i * D , I , 0 ] ----
+        % ---- A_i = [ Atilde_i * B , I , 0 ] ----
         % Q*dx = kron(dx', I_n) * vec(Q), so Atilde_i = kron(dx', I_n).
         Atilde_i = kron(dx', eye(n));             % n x n^2
 
-        A_i = [ Atilde_i * D , ...                % n x nVech
+        A_i = [ Atilde_i * B , ...                % n x nVech
                 eye(n)       , ...                % n x n  (picks out q)
                 zeros(n, 1) ];                    % n x 1  (c does not enter)
 
@@ -262,8 +263,8 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
     q     = y(nVech + 1 : nVech + n);
     c     = y(end);
 
-    % vec(Q) = D * vech(Q), then reshape the vector into an n x n matrix
-    vecQ = D * vechQ;
+    % vec(Q) = B * vech(Q), then reshape the vector into an n x n matrix
+    vecQ = B * vechQ;
     Q    = reshape(vecQ, n, n);
 
     % Remove tiny asymmetry from rounding (Q is symmetric in theory)
