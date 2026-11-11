@@ -2,15 +2,14 @@ classdef testSelectPolyDegree < matlab.unittest.TestCase
 % testSelectPolyDegree - Tester för lag1_autocorr och select_poly_degree.
 %
 % Kör från projektroten med:  setupPaths; runtests('tests/testSelectPolyDegree.m')
-% Kräver varken data eller mex. Den tillfälliga poly_fit_ml använder vanlig
-% minsta kvadrat, så testerna har lika stort brus på F och S (wF = wG = 1).
+% Kräver varken data eller mex. poly_fit_ml skattar vikterna wF och wG med ML.
 
     methods (TestClassSetup)
         function addPaths(testCase)
-            % setupPaths lägger inte till scripts/functions.
+            % setupPaths lägger inte till scripts/line_search.
             projectRoot = fileparts(fileparts(mfilename('fullpath')));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture( ...
-                fullfile(projectRoot, 'scripts', 'functions')));
+                fullfile(projectRoot, 'scripts', 'line_search')));
         end
     end
 
@@ -97,7 +96,8 @@ classdef testSelectPolyDegree < matlab.unittest.TestCase
         end
 
         function globalRandomStateIsUnchanged(testCase)
-            % Krävs för att sameSeedGivesSameResult i testLineSearch ska hålla.
+            % Gradvalet får inte påverka slumptalen, annars ger samma frö
+            % olika resultat i linjesökningen.
             rng(3);
             before = rng;
             alpha = linspace(0, 1, 10)';

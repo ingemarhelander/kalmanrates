@@ -1,7 +1,11 @@
 
+% test_poly_fit_ml - Ritar ML-polynom av olika grad för slumpad testdata.
+% Kör från projektroten med:  test_poly_fit_ml
 clear;
 clc;
 close all;
+
+addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts', 'line_search'));
 
 % Generate random mock data
 m = 40;

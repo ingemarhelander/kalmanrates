@@ -1,5 +1,6 @@
-function [stop, reason] = stop_criteria(fit, alphaHat, alphas, ok, F, fj, f0, opts)
-% stop_criteria - Stoppkriterier för linjesökningen (komponent 10).
+function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
+% evaluate - Stoppkriterier för linjesökningen (komponent 10): ska line search
+% stanna innan alphaHat utvärderas?
 %
 % Anropas efter att den senaste punkten alpha_j = alphas(end) utvärderats och
 % polynomet anpassats om, men innan nästa steg alphaHat utvärderas. Stoppar om

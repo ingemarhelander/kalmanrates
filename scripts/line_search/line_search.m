@@ -5,7 +5,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varIn
 % one per column: evals.X, evals.F, evals.G.
     maxLsIter = 50;
     evals.X = x;  evals.F = f;  evals.G = g;
-    alpha = first_step_length(g, d);
+    alpha = initial_step_length(g, d);
     xNew = x + alpha*d;
     [fNew, gNew] = kalmanObj(xNew, K, mu, varInd);
     evals.X(:, end+1) = xNew;  evals.F(1, end+1) = fNew;  evals.G(:, end+1) = gNew;

@@ -1,5 +1,5 @@
-function alpha = first_step_length(g, d)
-% first_step_length - Step length to the first new point of the line search.
+function alpha = initial_step_length(g, d)
+% initial_step_length - Step length to the first new point of the line search.
 %
 % The line search starts with one evaluated point (alpha = 0). It needs one
 % more point along d before a polynomial can be fitted (Req. 22).

@@ -2,8 +2,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % line_search_main - Linjesökning med polynom (designspec 5.2.4).
 %
 % Ska ersätta line_search.m när den är klar, och har därför samma in- och utdata.
-% Varje varv: utvärdera en ny punkt, välj polynomgrad, anpassa polynomet och
-% hitta nästa steglängd alphaHat. Stoppar när stop_criteria säger till
+% Varje varv: utvärdera en ny punkt, anpassa ML-polynomet (ml_poly_main) och
+% hitta nästa steglängd alphaHat. Stoppar när evaluate säger till
 % (komponent 10) eller när maxEvals punkter är utvärderade.
 % Returnerar den giltiga utvärderade punkt som har störst uppmätt F.
 %
@@ -21,7 +21,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     alphaNew = initial_step_length(g, d);      % första nya punkten (Req. 22)
     alphaMax = 1;                            % trust region (0, alphaMax]
     qPrev = [];                              % grad från förra varvet (hysteres)
-    stop = false;                            % true när stop_criteria stoppat sökningen
+    stop = false;                            % true när evaluate stoppat sökningen
 
     for k = 1:maxEvals
         xTry = x + alphaNew*d;
@@ -40,14 +40,14 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             alphaMax = min(alphaMax, alphaNew);
             continue
         end
-        [qPrev, fit] = select_poly_degree(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev);
+        [qPrev, fit] = ml_poly_main(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev);
 
         % isBetter styr bara trust region i find_step_length, inte när vi stoppar
         isBetter = isfinite(fTry) && fTry > f;
         [alphaHat, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
 
         % Stoppkriterier (komponent 10), prövas innan alphaHat utvärderas
-        [stop, reason] = stop_criteria(fit, alphaHat, alphas, ok, evals.F, gTry'*d, g'*d, opts);
+        [stop, reason] = evaluate(fit, alphaHat, alphas, ok, evals.F, gTry'*d, g'*d, opts);
         if stop
             fprintf('    line search stop: %s\n', reason);
             break

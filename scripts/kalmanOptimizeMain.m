@@ -1,10 +1,11 @@
-% kalmanOptimize.m
+% kalmanOptimizeMain.m
 % Gradient ascent with backtracking line search for the Kalman objective.
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
 
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
+addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
 config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
 
