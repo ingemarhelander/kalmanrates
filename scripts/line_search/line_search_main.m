@@ -1,4 +1,4 @@
-function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, method)
+function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, method, lsOpts)
 % line_search_main - Linjesökning med polynom (designspec 5.2.4).
 %
 % Ska ersätta line_search.m när den är klar, och har därför samma in- och utdata.
@@ -10,6 +10,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % Skriver ut en rad per utvärderad punkt.
 %
 % method (valfri): gradval i ml_poly_main, 'lag1' (standard) eller 'lr'.
+% lsOpts (valfri): struct som ersätter standardvärden i opts till evaluate,
+%   t.ex. lsOpts.minPoints = 6 eller lsOpts.c = 0.1.
 %
 % evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G).
 %   evals.A       steglängd för varje punkt (startpunkten har 0)
@@ -23,6 +25,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     maxEvals = 20;     % högsta antal nya punkter per sökriktning
     opts.dMinRel = 1e-3;  % minsta avstånd till en utvärderad punkt, relativt största steget (Req. 31)
     opts.c       = 0.5;   % stopp när |f'_j| <= c |f'_0| (lutningen har planat ut)
+    if nargin >= 9 && ~isempty(lsOpts)
+        for name = fieldnames(lsOpts)'
+            opts.(name{1}) = lsOpts.(name{1});
+        end
+    end
 
     evals.X = x;  evals.F = f;  evals.G = g;
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
