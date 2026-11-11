@@ -64,23 +64,3 @@ function [q, fit, info] = select_poly_degree(alpha, F, S, qPrev)
         end
     end
 end
-
-function tau = whiteness_threshold(alpha, q, fit, level, nSim)
-% Gräns för rho: anpassa samma polynom till rent brus många gånger och se hur
-% stort rho blir. Bara brus överskrider tau i 5 % av fallen.
-% Fast frö ger samma tau varje gång och påverkar inte rng.
-
-    % Designmatris för polynom av grad q. alpha skalas till [-1, 1] för
-    % noggrannhetens skull, det ändrar inte vilka polynom som kan anpassas.
-    m = numel(alpha);
-    s = (alpha(end) - alpha(1))/2;
-    x = (alpha - alpha(1))/s - 1;
-    k = 1:q;
-    A = [x.^(0:q); zeros(m, 1), k.*x.^(k - 1)/s];               % rader för F, sedan S
-
-    Aw = sqrt([fit.wF*ones(m, 1); fit.wG*ones(m, 1)]).*A;       % vikta raderna så att F och S väger lika
-    E  = randn(RandStream('mt19937ar', 'Seed', 0), 2*m, nSim);  % rent brus, en kolumn per försök
-    R  = E - Aw*(Aw\E);                                         % residualer när datan är rent brus
-    rho = sort(max(lag1_autocorr(R(1:m, :)), lag1_autocorr(R(m+1:end, :))));
-    tau = rho(ceil(level*nSim));
-end
