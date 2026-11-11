@@ -45,7 +45,7 @@ Se [MathWorks om saknade runtime-bibliotek](https://www.mathworks.com/help/matla
 
 | Körning | Extra toolbox |
 | --- | --- |
-| De sju testerna, `kalmanOptimizeMain`, `kalmanOptimizeSD` | Ingen |
+| Testerna i `tests/`, `kalmanOptimizeMain`, `kalmanOptimizeSD` | Ingen |
 | `runReducedIrCurvesV2`, `checkLaptopSample` (RTS, använder `pdf`) | Statistics and Machine Learning Toolbox |
 | `kalmanOptimizeMatlab` (använder `fmincon`) | Optimization Toolbox |
 

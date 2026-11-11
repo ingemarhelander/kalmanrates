@@ -47,6 +47,20 @@ identiska med den gamla binärens resultat, gradientkontrollen passerar och
 AD-varningen är borta. Ett söksteg i den egna optimeringen höjer målfunktionen.
 Hela optimeringsloopen och hela historiken är ännu inte verifierade.
 
+## Automatiska tester och framtida CI
+
+Alla automatiska tester ligger i `tests/`. Kör från projektmappen i en terminal:
+
+```text
+matlab -batch "setupPaths; results = runtests('tests'); assertSuccess(results)"
+```
+
+Samma kommando kan användas i en framtida GitLab-pipeline och ger felstatus om ett test misslyckas.
+Runnern behöver MATLAB med giltig licens och en kompatibel `tests/mex/testAdCountsMex`-binär
+(från paketet eller byggd på runnern). Testerna använder syntetiska data och behöver inga externa MAT-filer.
+`checkLaptopSample` och `checkMexRegression` är separata manuella integrationskontroller med riktiga data.
+GitLab-pipeline och spärr för merge konfigureras separat.
+
 ## Ändringar i Jörgens ursprungliga kod
 
 Den ursprungliga koden kommer från Jörgen. På `issue-1-komprimera-data` har följande

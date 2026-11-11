@@ -59,7 +59,7 @@ results = runtests('tests');
 assertSuccess(results)
 ```
 
-`which` ska visa filen i projektets egen `mex/`-mapp och alla sju tester ska passera.
+`which` ska visa filen i projektets egen `mex/`-mapp och alla tester i `tests/` ska passera.
 Om något stoppar: se [felsökning](docs/felsokning.md).
 
 ## Kör 250 dagar på din laptop

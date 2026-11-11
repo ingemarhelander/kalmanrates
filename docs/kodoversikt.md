@@ -15,7 +15,7 @@ kalmanrates/
 ├── mex/              C++/MEX-kod och kompilerade filer
 ├── measurement/      instrumentklasser och dataladdning
 ├── data/             .mat-filer (*), raw/ innehåller Excel-rådata
-├── tests/            tester för dataurval och PCA
+├── tests/            alla automatiska tester; mex/ innehåller C++-testhjälparen
 ├── dist/             lokalt MEX-paket för delning, ignoreras av Git
 └── docs/             dokument och figurer
 ```
@@ -190,6 +190,7 @@ De tre optimeringsskripten laddar det ursprungliga sparade Kalman-objektet via `
 
 - `testDataLimit.m` – testar dataurval, oförändrade parametrar och PCA med kort historik
 - `testAdCounts.m` – kör räknartesterna i `mex/testAdCountsMex.cpp`, som byggs av `compileMex`
+- `test_denoise_quadratic_approximation.m` – testar denoising med små syntetiska problem
 
 **mex/**
 
