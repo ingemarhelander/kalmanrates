@@ -1,10 +1,10 @@
 function rho = lag1_autocorr(r)
 % lag1_autocorr - Lag-1-autokorrelation för residualer (Req. 27).
 %
-% Mäter om residualer som ligger bredvid varandra brukar ha samma tecken.
-%   rho nära 0  bara brus är kvar
-%   rho nära 1  ett slätt mönster är kvar, alltså är graden för låg
-%
+%   rho nära 0  svagt samband mellan intilliggande residualer
+%   rho nära 1  intilliggande residualer tenderar att ha samma tecken
+%   rho nära -1 intilliggande residualer tenderar att ha motsatta tecken
+
 % r ska vara sorterad efter alpha. Varje kolumn är en egen följd och ger ett
 % eget värde i rho.
 

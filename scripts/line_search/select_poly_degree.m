@@ -1,66 +1,231 @@
-function [q, fit, info] = select_poly_degree(alpha, F, S, qPrev)
-% select_poly_degree - Väljer polynomgrad längs linjen (Req. 25, 26, 28-30).
+function [q, fit, info] = select_poly_degree(fits, method, options)
+% SELECT_POLY_DEGREE Select a polynomial degree from precomputed fits.
 %
-% Provar q = 2, 3, ... och väljer den lägsta grad där residualerna ser ut som
-% brus. En för låg grad lämnar ett slätt mönster, vilket ger stort positivt rho.
-% Bara ett för stort rho höjer graden (ensidigt test).
+%   [q, fit, info] = select_poly_degree(fits)
+%   [q, fit, info] = select_poly_degree(fits, method)
+%   [q, fit, info] = select_poly_degree(fits, method, options)
 %
-%   alpha  steglängder (bara punkter där F och S är ändliga)
-%   F      funktionsvärden
-%   S      lutning längs linjen, g'*d
-%   qPrev  grad från förra varvet, eller [] första gången (valfri)
-%   q      vald grad, fit är anpassningen för den graden
-%   info   (valfri) en rad per provad grad: info.q, info.rho = [rho_F rho_S],
-%          info.tau, info.fits. Används för felsökning och figurer. tau är
-%          NaN för sista graden om info inte efterfrågas.
+% INPUTS
+%   fits    Cell array (or struct array) returned by mult_q_poly_fits.
+%           Each fit must contain:
+%             sigmaF, sigmaG, rhoF, rhoG, pTrendF, pTrendG, converged
+%   method  'threshold' (default) or 'score'.
+%   options Optional struct overriding the defaults below.
+%
+% OUTPUTS
+%   q       Selected polynomial degree. Empty if threshold method finds
+%           no acceptable degree.
+%   fit     The selected fit, or [] if no degree was selected.
+%   info    Diagnostics, acceptance flags and (for score method) scores.
+%
+% IMPORTANT
+%   This function does NOT fit any models. It only selects among the
+%   models already calculated by mult_q_poly_fits.
+%
+% METHOD 'threshold'
+%   Selects the lowest degree satisfying all diagnostic thresholds.
+%   Right now: abs(rhoF) <=0.2
+%              abs(rhoG) <=0.2
+%              ptrendF >= 0.05
+%              ptrendG >= 0.05
+%              converged == true
+%
+% METHOD 'score'
+%   Scores the fits using residual variance, residual autocorrelation,
+%   trend-test p-values and model complexity. The lowest score wins.
+%              1. Residual variance (sigmaF, sigmaG)
+%              2. Residual autocorrelation (rhoF, rhoG)
+%              3. Trend-test p-values (pTrendF, pTrendG)
+%              4. Model complexity (degree)
+%
+% DEFAULT OPTIONS
+%   options.weights         = [0.35 0.30 0.25 0.10]
+%       Weights correspond to variance, autocorrelation, trend and
+%       complexity, respectively. They are normalized to sum to one.
 
-    qMin   = 2;     % lägsta grad, används när punkterna är få
-    qCap   = 6;     % högsta grad
-    mMin   = 4;     % färre punkter än så: alltid qMin
-    level  = 0.95;  % bara brus överskrider tau i 5 % av fallen
-    nSim   = 1000;  % antal brusförsök för att ta fram tau
-    margin = 0.1;   % en lägre grad än förra varvet måste vara klart bättre (hysteres)
-
-    if nargin < 4 || isempty(qPrev)
-        qPrev = 0;  % ingen grad räknas som lägre
+    if nargin < 2 || isempty(method)
+        method = 'threshold';
+    end
+    if nargin < 3 || isempty(options)
+        options = struct();
     end
 
-    % rho jämför grannar, så punkterna måste ligga i ordning
-    [alpha, order] = sort(alpha(:));
-    F = F(:);  F = F(order);
-    S = S(:);  S = S(order);
-    m = numel(alpha);
+    if isstring(method)
+        method = char(method);
+    end
+    if ~ischar(method)
+        error('method must be ''threshold'' or ''score''.');
+    end
+    method = lower(strtrim(method));
 
-    % Minst två fler observationer (2m) än koefficienter (q+1)
-    qMax = qMin;
-    if m >= mMin
-        qMax = min(qCap, 2*m - 3);
+    if ~isstruct(options)
+        error('options must be a struct.');
     end
 
-    tolExact = 1e-10;   % residualer under tolExact*data räknas som avrundningsfel
-    data = [F - mean(F), S];
-    info = struct('q', [], 'rho', zeros(0, 2), 'tau', [], 'fits', {{}});
+    % Default settings (can be changed)
+    defaults.maxAbsRho = 0.20;
+    defaults.minTrendP = 0.05;
+    defaults.weights = [0.35 0.30 0.25 0.10];
 
-    for q = qMin:qMax
-        fit = poly_fit_ml(alpha, F, S, q, false);   % false: inga figurer
-        r = [fit.rF(:), fit.rG(:)];
-        % Exakt anpassning: residualerna är bara avrundningsfel
-        isExact = norm(r(:)) <= tolExact*norm(data(:));
-        % En grupp (F eller S) med bara avrundningsfel kvar räknas som brus.
-        % Avrundningsfel är inte vitt brus och kan annars ge stort rho.
-        rho = lag1_autocorr(r);
-        rho(vecnorm(r) <= tolExact*vecnorm(data)) = 0;
-        % Stanna vid högsta graden, vid exakt anpassning eller när rho är litet.
-        % Under förra varvets grad krävs att rho är minst margin under tau.
-        isLast = q == qMax || isExact;
-        tau = NaN;
-        if ~isLast || nargout > 2
-            tau = whiteness_threshold(alpha, q, fit, level, nSim);
+    names = fieldnames(defaults);
+    for k = 1:numel(names)
+        name = names{k};
+        if ~isfield(options, name) || isempty(options.(name))
+            options.(name) = defaults.(name);
         end
-        info.q(end+1) = q;  info.rho(end+1, :) = rho;
-        info.tau(end+1) = tau;  info.fits{end+1} = fit;
-        if isLast || max(rho) <= tau - margin*(q < qPrev)
-            break
+    end
+
+    if ~isscalar(options.maxAbsRho) || options.maxAbsRho < 0
+        error('options.maxAbsRho must be a nonnegative scalar.');
+    end
+    if ~isscalar(options.minTrendP) || options.minTrendP < 0 || ...
+            options.minTrendP > 1
+        error('options.minTrendP must be between 0 and 1.');
+    end
+    if numel(options.weights) ~= 4 || any(options.weights < 0) || ...
+            sum(options.weights) <= 0
+        error('options.weights must contain four nonnegative values, not all zero.');
+    end
+    weights = options.weights(:)' / sum(options.weights);
+
+    % Convert struct array to cell array for uniform handling.
+    if isstruct(fits)
+        fits = num2cell(fits);
+    end
+    if ~iscell(fits) || isempty(fits)
+        error('fits must be a nonempty cell array or struct array.');
+    end
+
+    nFits = numel(fits);
+    required = {'sigmaF','sigmaG','rhoF','rhoG', ...
+                'pTrendF','pTrendG','converged'};
+
+    sigmaF = nan(nFits,1);
+    sigmaG = nan(nFits,1);
+    rhoF = nan(nFits,1);
+    rhoG = nan(nFits,1);
+    pTrendF = nan(nFits,1);
+    pTrendG = nan(nFits,1);
+    converged = false(nFits,1);
+
+    for k = 1:nFits
+        currentFit = fits{k};
+        if ~isstruct(currentFit)
+            error('fits{%d} must be a struct.', k);
         end
+
+        for j = 1:numel(required)
+            if ~isfield(currentFit, required{j})
+                error('fits{%d} is missing the field "%s".', ...
+                      k, required{j});
+            end
+        end
+
+        sigmaF(k) = currentFit.sigmaF;
+        sigmaG(k) = currentFit.sigmaG;
+        rhoF(k) = currentFit.rhoF;
+        rhoG(k) = currentFit.rhoG;
+        pTrendF(k) = currentFit.pTrendF;
+        pTrendG(k) = currentFit.pTrendG;
+        converged(k) = logical(currentFit.converged);
+    end
+
+    degree = (1:nFits)';
+    valid = converged & isfinite(sigmaF) & isfinite(sigmaG) & ...
+            sigmaF > 0 & sigmaG > 0 & isfinite(rhoF) & ...
+            isfinite(rhoG) & isfinite(pTrendF) & isfinite(pTrendG);
+
+    % Method A: choose the lowest degree that passes every threshold.
+    accepted = valid & abs(rhoF) <= options.maxAbsRho & ...
+               abs(rhoG) <= options.maxAbsRho & ...
+               pTrendF >= options.minTrendP & ...
+               pTrendG >= options.minTrendP;
+
+    % Initialize outputs.
+    q = [];
+    fit = [];
+    scores = nan(nFits,1);
+
+    switch method
+        case 'threshold'
+            selected = find(accepted, 1, 'first');
+            if ~isempty(selected)
+                q = degree(selected);
+                fit = fits{selected};
+                status = 'selected';
+            else
+                status = 'no_degree_passed';
+            end
+
+        case 'score'
+            candidates = find(valid);
+            if isempty(candidates)
+                status = 'no_valid_fits';
+            else
+                % Lower values are better for all four score components.
+                varianceRaw = 0.5 * ( ...
+                    log(sigmaF(candidates) ./ min(sigmaF(candidates))) + ...
+                    log(sigmaG(candidates) ./ min(sigmaG(candidates))) );
+
+                autocorrRaw = 0.5 * (abs(rhoF(candidates)) + ...
+                                     abs(rhoG(candidates)));
+
+                % A p-value below minTrendP adds a penalty. No penalty
+                % is added when the test does not indicate a trend.
+                trendRaw = 0.5 * ( ...
+                    max(0, log10(options.minTrendP ./ ...
+                        max(pTrendF(candidates), realmin))) + ...
+                    max(0, log10(options.minTrendP ./ ...
+                        max(pTrendG(candidates), realmin))) );
+
+                complexityRaw = degree(candidates) / max(degree(candidates));
+
+                varianceScore = normalize_score(varianceRaw);
+                autocorrScore = normalize_score(autocorrRaw);
+                trendScore = normalize_score(trendRaw);
+                complexityScore = normalize_score(complexityRaw);
+
+                candidateScores = weights(1) * varianceScore + ...
+                                  weights(2) * autocorrScore + ...
+                                  weights(3) * trendScore + ...
+                                  weights(4) * complexityScore;
+                scores(candidates) = candidateScores;
+
+                [~, localIndex] = min(candidateScores);
+                selected = candidates(localIndex);
+                q = degree(selected);
+                fit = fits{selected};
+                status = 'selected';
+            end
+
+        otherwise
+            error('Unknown method "%s". Use ''threshold'' or ''score''.', method);
+    end
+
+    info.method = method;
+    info.status = status;
+    info.degree = degree;
+    info.valid = valid;
+    info.accepted = accepted;
+    info.sigmaF = sigmaF;
+    info.sigmaG = sigmaG;
+    info.rhoF = rhoF;
+    info.rhoG = rhoG;
+    info.pTrendF = pTrendF;
+    info.pTrendG = pTrendG;
+    info.scores = scores;
+    info.options = options;
+    info.weights = weights;
+end
+
+function normalized = normalize_score(values)
+% Map a score vector to [0,1]. A constant vector becomes all zeros.
+    values = values(:);
+    low = min(values);
+    high = max(values);
+    if high - low <= eps(max(1, max(abs(values))))
+        normalized = zeros(size(values));
+    else
+        normalized = (values - low) / (high - low);
     end
 end
