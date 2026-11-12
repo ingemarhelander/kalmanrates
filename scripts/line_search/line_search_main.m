@@ -1,7 +1,8 @@
-function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd)
+function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, opts)
 % line_search_main - Linjesökning med polynom (designspec 5.2.4).
 %
-% Ska ersätta line_search.m när den är klar, och har därför samma in- och utdata.
+% Ska ersätta line_search.m när den är klar, och har därför samma in- och utdata
+% (plus det valfria argumentet opts).
 % Varje varv: utvärdera en ny punkt, anpassa ML-polynomet (ml_poly_main) och
 % hitta nästa steglängd alphaHat. Stoppar när evaluate säger till
 % (komponent 10) eller när maxEvals punkter är utvärderade.
@@ -11,10 +12,20 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %
 % evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G),
 % och steglängden för varje punkt i evals.A (startpunkten har 0).
+%
+% opts (valfri, sätts i kalmanOptimizeMain.config med prefixet ls_). Fält
+% som saknas får standardvärdet:
+%   maxEvals    (20)   högsta antal nya punkter per sökriktning
+%   c           (0.5)  stopp när |f'_j| <= c |f'_0| (lutningen har planat ut)
+%   dMinRel     (1e-3) minsta avstånd till en utvärderad punkt, relativt
+%                      största steget (Req. 31)
+%   noiseFactor (1)    stopp när förutsagd ökning < noiseFactor*sigmaF
 
-    maxEvals = 20;     % högsta antal nya punkter per sökriktning
-    opts.dMinRel = 1e-3;  % minsta avstånd till en utvärderad punkt, relativt största steget (Req. 31)
-    opts.c       = 0.5;   % stopp när |f'_j| <= c |f'_0| (lutningen har planat ut)
+    if nargin < 8
+        opts = struct();
+    end
+    opts = default_opts(opts);
+    maxEvals = opts.maxEvals;
 
     evals.X = x;  evals.F = f;  evals.G = g;
     alphas = 0;                              % steglängd för varje kolumn i evals
@@ -67,4 +78,21 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     xNew = evals.X(:, j);
     fNew = evals.F(j);
     gNew = evals.G(:, j);
+end
+
+function opts = default_opts(opts)
+% Fyller i standardvärden för fält som saknas. Okända fält ger fel, så att
+% ett felstavat namn i config-filen inte ignoreras i tysthet.
+    def = struct('maxEvals', 20, 'c', 0.5, 'dMinRel', 1e-3, 'noiseFactor', 1);
+    names = fieldnames(opts);
+    unknown = names(~isfield(def, names));
+    if ~isempty(unknown)
+        error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
+    end
+    defNames = fieldnames(def);
+    for i = 1:numel(defNames)
+        if ~isfield(opts, defNames{i})
+            opts.(defNames{i}) = def.(defNames{i});
+        end
+    end
 end
