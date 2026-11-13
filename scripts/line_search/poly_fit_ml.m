@@ -154,7 +154,7 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
 
     % Information om iterationen
     fit.iterations = k;
-    fit.converged = (k < maxIter);
+    fit.converged = converged;
 
     % Visualize measurements and fitted ML polynomial
     if doPlot

@@ -10,4 +10,5 @@ addpath(fullfile(projectRoot, 'mex'));
 addpath(fullfile(projectRoot, 'measurement'));
 addpath(fullfile(projectRoot, 'data'));
 addpath(fullfile(projectRoot, 'data', 'raw'));
+addpath(fullfile(projectRoot, 'tests'));          % demos, inte tests/stubs
 clear projectRoot

@@ -29,6 +29,9 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
 %               inte alphaMax, som kan vara mycket större än stegen.
 % opts.noiseFactor: faktor på fit.sigmaF i kriterium 3. Större värde ger
 %               tidigare stopp.
+% opts.minPoints: kriterium 1 och 3 får stoppa först när minst så många
+%               punkter (startpunkten inräknad) är utvärderade.
+% Standardvärden sätts i line_search_main (default_opts).
 %
 % Bruset i riktningsderivatan antas vara litet jämfört med c|f'_0|, så
 % lutningsvillkoret har ingen brusspärr (jfr fit.sigmaG om det behövs).
@@ -36,7 +39,8 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
 
     stop = true;
     improved = max(F(ok)) > F(1);    % returpunkten är bättre än startpunkten
-    if abs(fj) <= opts.c*abs(f0) && improved
+    enough = numel(alphas) >= opts.minPoints;   % tillräckligt många punkter för kriterium 1 och 3
+    if enough && abs(fj) <= opts.c*abs(f0) && improved
         reason = sprintf('lutningen har planat ut, |f''_j| <= %.2g |f''_0|, och F har ökat', opts.c);
         return
     end
@@ -45,7 +49,7 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
         return
     end
     % fit.sigmaF är ~0 vid exakt anpassning. Då stoppar bara de andra kriterierna.
-    if improved && poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < opts.noiseFactor*fit.sigmaF
+    if enough && improved && poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < opts.noiseFactor*fit.sigmaF
         reason = sprintf('förutsagd ökning mindre än %.2g * bruset, och F har ökat', opts.noiseFactor);
         return
     end
