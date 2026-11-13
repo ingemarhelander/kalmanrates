@@ -1,92 +1,241 @@
 # Kalmanrates
 
-Skattning av EUR-räntekurvan med Kalmanfilter. Koden kommer ursprungligen från Jörgen.
-Gruppen kan köra 250 dagar på egna laptops och hela historiken på simhall.
+Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter. Koden kommer ursprungligen från Jörgen.
 
-**Isak ansvarar för det uppdaterade MEX-paketet som krävs för att köra koden på sin egen dator.** De andra använder
-färdiga filer och behöver normalt inte installera C++ eller Boost.
+## Kom igång
 
-## Förutsättningar
+1. Klona projektet med `git clone` eller hämta den senaste koden från `main`.
+2. Hämta `EUR.mat`, `EUR100.mat`, `kalmanDebug.mat` och `kalmanXoptAll.mat` från **Google Drive > TATA85/kod** och lägg dem i `data/`.
+3. Hämta **`kalmanrates-mex-win64-R2026b-20261111.zip`** från samma Drive-mapp. Packa upp den direkt i projektmappen (där README ligger), behåll mappstrukturen och ersätt äldre MEX-filer. Filerna ska hamna här:
 
-- MATLAB och Git samt åtkomst till projektets GitHub-repo och Google Drive.
-- Det delade paketet är verifierat på **64-bitars Windows med MATLAB R2026b**.
-  Har du annan version eller Mac/Linux? Isåfall är det oklart om det kommer funka, men jag hoppas det /Isak.
-- Standardoptimeringen nedan kräver inga extra toolboxar.
-  För RTS och `fmincon`, se [toolboxkrav](docs/felsokning.md#saknade-toolboxar).
+   ```text
+   mex/mexKalmanLogLikelihood.mexw64
+   mex/mexPortfolio.mexw64
+   tests/mex/testAdCountsMex.mexw64
+   ```
 
-## Engångssetup på din laptop
+   MAT- och MEX-filer följer inte med Git. Även den som redan har projektet behöver det uppdaterade MEX-paketet.
+   **Isak ansvarar för paketet**; övriga behöver normalt inte installera C++ eller Boost.
+   Paketet är verifierat på Windows 64-bit med MATLAB R2026b. Mac/Linux kräver andra MEX-filer; stäm av annan MATLAB-version med Isak.
+4. Öppna projektmappen i MATLAB och kör:
 
-### 1. Hämta koden
+   ```matlab
+   setupPaths
+   kalmanOptimizeMain
+   ```
 
-Klona projektet från github.
+   För modellinitiering, RTS och figurer används `runReducedIrCurvesV2`. Se [toolboxkrav och felsökning](docs/felsokning.md).
 
-Har du redan projektet, kör följande från din projektmapp i terminalen:
+## Välj antal dagar
 
-```powershell
-git fetch origin
-git switch issue-1-komprimera-data
-git pull --ff-only origin issue-1-komprimera-data
+I `modelRunConfig.m` styr `config.maxObservations` både modellinitiering och optimering.
+Standardvärdet `250` använder de första 250 handelsdagarna för laptopkörning.
+Ändra lokalt till `Inf` för hela historiken, exempelvis på simhall.
+Korta körningars resultat får tillägget `_sample250` (eller valt antal dagar).
+
+## Koppla till remote datorn
+
+OBS Endast en person kan använda datorn åt gången.
+
+Instruktion för att ansluta till datorn med tillgång till din vanliga repository.
+
+1. Tryck Windows + R, skriv `mstsc` och tryck Enter. Du kan också söka efter Fjärrskrivbordsanslutning.
+2. Skriv in simhall3-001.ad.liu.se
+3. Klicka Show Options
+4. Klicka Local Resources
+5. Klicka More
+6. Under Drives - välj Windows (C:) och klicka OK
+7. Klicka Connect och logga in
+
+Flytta över en fil:
+
+1. Öppna Utforskaren på simhall.
+2. Under This PC ska det finnas en som heter C on "Datornamn"
+3. Dra enkelt över filerna dit du vill ha dem.
+
+## Struktur
+
+```
+kalmanrates/
+├── setupPaths.m     lägger till projektmapparna på MATLAB-sökvägen
+├── dataPath.m       sökväg till fil i data/, t.ex. dataPath('EUR100.mat')
+├── modelRunConfig.m antal observationer för initiering och optimering
+├── scripts/         skript som körs
+├── model/           Kalmanmodellen
+├── mex/             C++/MEX-kod och kompilerade filer
+├── measurement/     instrumentklasser och dataladdning
+├── data/            .mat-filer (*), raw/ innehåller Excel-rådata
+├── tests/           automatiska tester och MEX-testhjälpare
+└── docs/            dokument och figurer
 ```
 
-### 2. Hämta filer från Google Drive
+## Hur filerna hänger ihop
 
-Allt finns i **`TATA85/kod`**:
+Heldragna pilar = anrop, streckade pilar = läser/sparar data.
 
-- Lägg `EUR.mat`, `EUR100.mat`, `kalmanDebug.mat` och `kalmanXoptAll.mat` i `data/`.
-- Packa upp **`kalmanrates-mex-win64-R2026b-20261111.zip`** direkt i projektmappen
-  (mappen med denna README). Behåll mapparna i ZIP-filen och ersätt äldre MEX-filer.
+```mermaid
+flowchart TD
+    subgraph DATA["data/"]
+        XLSX["raw/EUR.xlsx"]
+        ECB["raw/datesEURECB.xlsx"]
+        EURMAT[("EUR.mat")]
+        EUR100[("EUR100.mat")]
+        KDEBUG[("kalmanDebug.mat")]
+        XOPT[("kalmanXoptAll.mat")]
+        AXRTS[("axRtsOpt.mat")]
+    end
 
-Kontrollera att filerna ligger så här:
+    subgraph MEAS["measurement/"]
+        CMFE["createMatFromExcel.m"]
+        PPWD["populatePortfolioWithData.m"]
+        CIC["createInstrumentsClasses.m"]
+        CLS["cls*.m<br/>OIS, IBOR, IRS, FRA,<br/>FxSwap, FutureIR, ..."]
+    end
 
-```text
-mex/mexKalmanLogLikelihood.mexw64
-mex/mexPortfolio.mexw64
-tests/mex/testAdCountsMex.mexw64
+    subgraph MEX["mex/"]
+        MEXP[["mexPortfolio.mexw64"]]
+        MEXK[["mexKalmanLogLikelihood.mexw64"]]
+        CPP["mexKalmanLogLikelihood.cpp<br/>kalmanLogLikelihoodAd.h<br/>sparseMatrix.h"]
+        COMP["compileMex.m"]
+    end
+
+    subgraph MODEL["model/"]
+        MI["marketInfo.m"]
+        PCA["pcaIRS.m"]
+        KIR["clsKalmanIr.m"]
+        TAY["taylorInstrPC.m"]
+        KSUB["kalmanSub.m"]
+        KOBJ["kalmanObj.m"]
+        KOBJMIN["kalmanObjMin.m"]
+        LOAD["loadKalmanSample.m"]
+    end
+
+    subgraph SCRIPTS["scripts/"]
+        TENOR["runTenorMultiIrCurves.m"]
+        V2["runReducedIrCurvesV2.m<br/>huvudskript"]
+        INIT["runReducedIrCurvesInit.m"]
+        CLSS["runReducedIrCurvesCls.m"]
+        OPTMAIN["kalmanOptimizeMain.m"]
+        OPTM["kalmanOptimizeMatlab.m<br/>fmincon"]
+        OPTSD["kalmanOptimizeSD.m<br/>brantaste lutning"]
+    end
+
+    SETUP{{"setupPaths.m + dataPath.m"}}
+    PDF["docs/ecbCutsHikes.pdf"]
+
+    XLSX -.-> CMFE -.->|sparar| EURMAT
+
+    TENOR --> MI
+    TENOR --> PPWD
+    TENOR --> CIC
+    TENOR -.->|sparar| EUR100
+
+    EURMAT -.-> PPWD
+    PPWD --> MEXP
+    CIC --> CLS
+    CIC --> MEXP
+    CLS --> MEXP
+    TENOR --> MEXP
+    INIT --> MEXP
+
+    V2 --> INIT
+    V2 --> CLSS
+    V2 --> MEXK
+    V2 --> KSUB
+    V2 -.->|sparar| AXRTS
+    V2 -.->|sparar| PDF
+
+    INIT --> MI
+    INIT --> PCA
+    INIT --> PPWD
+    INIT --> CIC
+    EUR100 -.-> INIT
+    ECB -.-> INIT
+
+    CLSS --> KIR
+    KIR --> TAY
+    KSUB --> KIR
+
+    KDEBUG -.-> LOAD
+    OPTMAIN --> LOAD
+    OPTM --> LOAD
+    OPTSD --> LOAD
+    XOPT -.-> OPTMAIN
+    OPTMAIN --> KOBJ
+    XOPT -.-> OPTM
+    XOPT -.-> OPTSD
+    OPTM --> KOBJMIN --> KOBJ
+    OPTSD --> KOBJ
+    KOBJ --> MEXK
+
+    COMP -.->|kompilerar| CPP
+    CPP -.-> MEXK
+
+    SETUP -.-> SCRIPTS
+    SETUP -.-> CMFE
 ```
 
-**MAT-data och MEX-filer följer inte med Git.** Använd det uppdaterade ZIP-paketet;
-de äldre fristående modellfilerna från Jörgen saknar AD-fixen.
+## Filer
 
-### 3. Kontrollera installationen
+**scripts/**
 
-Öppna projektmappen i MATLAB och kör:
+- `runTenorMultiIrCurves.m` – skattar forwardkurvor `f` och `π` per dag, sparar `data/EUR100.mat`
+- `runReducedIrCurvesV2.m` – huvudskript: kör Init + Cls, RTS-iterationer, plottar
+- `runReducedIrCurvesInit.m` – PCA, ECB-datum och instrumentdata per dag
+- `runReducedIrCurvesCls.m` – startparametrar, skapar Kalman-objektet `K`
+- `kalmanOptimizeMain.m` – optimering med sökriktning, linjesökning och denoising
+- `kalmanOptimizeMatlab.m` – ML-skattning med `fmincon`
+- `kalmanOptimizeSD.m` – ML-skattning med brantaste lutning
 
-```matlab
-setupPaths
-clear mexKalmanLogLikelihood testAdCountsMex
-which mexKalmanLogLikelihood -all
-results = runtests('tests');
-assertSuccess(results)
-```
+**model/**
 
-`which` ska visa filen i projektets egen `mex/`-mapp och alla tester i `tests/` ska passera.
-Om något stoppar: se [felsökning](docs/felsokning.md).
+- `clsKalmanIr.m` – Kalman-klassen (systemmatriser, filter, målfunktion, plottar)
+- `kalmanSub.m` – ett RTS-steg (Riccati-rekursion)
+- `taylorInstrPC.m` – instrumentpris och Jacobian för €STR/OIS
+- `pcaIRS.m` – PCA av forwardkurvor, även för urval utan out-of-sample-period
+- `marketInfo.m` – marknadskonventioner per valuta
+- `kalmanObj.m` / `kalmanObjMin.m` – målfunktion + gradient för optimering
+- `loadKalmanSample.m` – laddar sparad modell och tillämpar observationstaket
+- `limitKalmanObservations.m` – kortar modellens dagliga fält tillsammans
+- `selectObservations.m` – väljer dagar och resultatfilernas tillägg
 
-## Kör 250 dagar på din laptop
+**mex/**
 
-Behåll `config.maxObservations = 250` i `modelRunConfig.m` (standard).
-När setup är klar räcker följande i MATLAB från projektmappen vid varje körning:
+- `mexKalmanLogLikelihood.cpp` – MEX-gränssnitt för log-likelihood + gradient
+- `kalmanLogLikelihoodAd.h` – Kalmanfilter med automatisk differentiering
+- `sparseMatrix.h` – gles matrisklass
+- `compileMex.m` – bygger med projektets lokala kod och Boost; [bygginstruktioner för Isak](docs/utveckling.md)
+- `mexKalmanLogLikelihood.mexw64` \* – kompilerad version
+- `mexPortfolio.mexw64` \* – handledarens bibliotek för marknadsdata och instrument
+- `old/kalmanLogLikelihoodAd2.h` – äldre version, används inte
 
-```matlab
-setupPaths
-kalmanOptimizeMain
-```
+**measurement/**
 
-## Kör hela historiken på simhall
+- `createMatFromExcel.m` – Excel (`data/raw/`) → `.mat` (`data/`)
+- `populatePortfolioWithData.m` – laddar data i `mexPortfolio`
+- `createInstrumentsClasses.m` – skapar instrumentobjekt för en dag
+- `cls*.m` – instrumentklasser (OIS, IBOR, IRS, FRA, m.fl.)
 
-1. [Anslut till simhall](docs/fjarrskrivbord.md).
-2. Hämta samma branch, data och uppdaterade MEX-filer där. Stäm av MATLAB-versionen. Laptop-paketet är byggt för R2026b.
-3. Ändra **lokalt på simhall** till `config.maxObservations = Inf` i `modelRunConfig.m`.
-   Behåll 250 som gemensam standard i Git.
-4. Kör `setupPaths` och `kalmanOptimizeMain` i MATLAB från projektmappen.
+**data/**
 
-Inställningen gäller även de andra optimeringsskripten och `runReducedIrCurvesV2`.
-Korta körningars resultatfiler får tillägget `_sample250` (eller valt antal dagar); fulla körningar använder
-de ursprungliga resultatnamnen. Hela optimeringsloopen och hela historiken återstår att verifiera.
+- `raw/EUR.xlsx` – rådata (BID, ASK, IBOR)
+- `raw/datesEURECB.xlsx` – ECB:s mötesdatum
+- `EUR.mat` \* – rådata i MATLAB-format
+- `EUR100.mat` \* – forwardkurvor 2005–2025 (287 MB)
+- `kalmanDebug.mat` \* – sparat Kalman-objekt
+- `kalmanXoptAll.mat` \* – optimerade parametrar
+- `axRtsOpt.mat` \* – starttillstånd från RTS
 
-## Mer dokumentation
+**tests/**
 
-- [Felsökning och toolboxkrav](docs/felsokning.md)
-- [Bygginformation för Isak och ändringar i Jörgens kod](docs/utveckling.md)
-- [Projektstruktur, flödesschema och fillista](docs/kodoversikt.md)
-- [Fjärrskrivbord och filöverföring till simhall](docs/fjarrskrivbord.md)
+- `testDataLimit.m` – dataurval, oförändrade parametrar och PCA med kort historik
+- `testAdCounts.m` och `mex/testAdCountsMex.cpp` – AD-räknaren
+- `test_denoise_quadratic_approximation.m` – denoising med syntetiska data
+
+**docs/**
+
+- `projektbeskrivning.pdf` – teori och ekvationer
+- [Utvecklingsdokumentation](docs/utveckling.md), [kodöversikt](docs/kodoversikt.md) och [felsökning](docs/felsokning.md)
+- `ecbCutsHikes.pdf` – figur: marknadsimplicerad vs. ECB:s styrränta (skapas av `runReducedIrCurvesV2.m`)
+
+\* Ignoreras av Git. Indata och MEX-paket hämtas från Drive enligt ovan; resultatfiler skapas av skripten.
