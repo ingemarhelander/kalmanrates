@@ -3,7 +3,7 @@ function [q, fit, info] = ml_poly_main(alpha, F, S, qPrev, method)
 %
 % Ingång till ML-delen. Väljer polynomgrad med en av två metoder:
 %   'lr'    select_poly_degree_lr, likelihoodkvottest (standard)
-%   'lag1'  select_poly_degree, lag-1-autokorrelation
+%   'lag1'  select_poly_degree_lag1, lag-1-autokorrelation
 %
 %   alpha   steglängder (bara punkter där F och S är ändliga)
 %   F       funktionsvärden
@@ -20,15 +20,15 @@ function [q, fit, info] = ml_poly_main(alpha, F, S, qPrev, method)
         method = 'lr';
     end
 
-    % info begärs bara när den behövs: select_poly_degree räknar då tau även
-    % för sista graden, vilket annars är onödigt arbete.
+    % info begärs bara när den behövs: select_poly_degree_lag1 räknar då tau
+    % även för sista graden, vilket annars är onödigt arbete.
     info = [];
     switch method
         case 'lag1'
             if nargout > 2
-                [q, fit, info] = select_poly_degree(alpha, F, S, qPrev);
+                [q, fit, info] = select_poly_degree_lag1(alpha, F, S, qPrev);
             else
-                [q, fit] = select_poly_degree(alpha, F, S, qPrev);
+                [q, fit] = select_poly_degree_lag1(alpha, F, S, qPrev);
             end
         case 'lr'
             [q, fit, info] = select_poly_degree_lr(alpha, F, S);
