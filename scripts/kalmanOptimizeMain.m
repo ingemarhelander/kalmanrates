@@ -21,6 +21,7 @@ history = init_history(x);
 D = [];          % Last noisy_size search directions (one per column)
 evalHist = {};   % History of line search evaluations
 iter = 1;
+stalls = 0;      % Consecutive iterations where x did not change
 
 while true
     history = update_history(history, x, f, g);
@@ -37,6 +38,7 @@ while true
     evalHist = store_evals(evalHist, evals, noisy_size);
 
     %Iteration done, update counter and x f and g
+    xStart = x;
     [x, f, g] = update_step(xNew, fNew, gNew);
     iter = iter + 1;
 
@@ -56,6 +58,17 @@ while true
             [x, f, g] = update_step(xNew, fNew, gNew);
         end
         fprintf('Denoising done \n')
+    end
+
+    % Stop if x has not changed in 3 consecutive iterations
+    if isequal(x, xStart)
+        stalls = stalls + 1;
+        if stalls >= 3
+            fprintf('Stopping: x has not changed in %d consecutive iterations.\n', stalls);
+            break;
+        end
+    else
+        stalls = 0;
     end
 
     %Check if current step fulfills stop criterion.

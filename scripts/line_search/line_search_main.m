@@ -70,6 +70,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % prova ett 10 gånger kortare steg i stället för att stoppa med alpha = 0
         if ~(max(evals.F(ok)) > f) && min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
             alphaHat = min(alphas(alphas > 0))/10;
+            if alphaHat < 1e-8*max(alphas)   % ge upp, steget är försumbart
+                evals.reason = 'ingen förbättring, steget har krympts under 1e-8 gånger största steget';
+                fprintf('    line search stop: %s\n', evals.reason);
+                stop = true;
+                break
+            end
         end
         evals.AHat(end) = alphaHat;
 
