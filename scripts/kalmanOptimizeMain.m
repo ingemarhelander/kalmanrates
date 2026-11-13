@@ -57,10 +57,12 @@ while true
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             [x, f, g] = update_step(xNew, fNew, gNew);
+            [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size);
         end
 
         fprintf('Denoising done \n')
     end
+
 
     % Stop if x has not changed in 3 consecutive iterations
     if isequal(x, xStart)
@@ -150,6 +152,96 @@ function evalHist = store_evals(evalHist, evals, noisy_size)
     evalHist{end+1} = evals;
     if numel(evalHist) > noisy_size
         evalHist = evalHist(end-noisy_size+1:end);
+    end
+end
+
+
+function [D, B, evalHist] = ReOrthoginalizeAndReOrganize(dprime, D, B, evalHist, noisy_size)
+    Dprime = ReOrthogonalize(dprime, D);
+    Bprime = Dprime(:, end-noisy_size+1:end);
+    evalHistPrime = ReOrganize(Bprime, B, evalHist);
+    D = Dprime;
+    B = Bprime;
+    evalHist = evalHistPrime;
+end
+
+function Dprime = ReOrthogonalize(dprime, D)
+    if ~isnumeric(D) || isempty(D)
+        error('D must be a nonempty numeric matrix.');
+    end
+    if ~isnumeric(dprime) || size(dprime, 2) ~= 1 || ...
+            size(dprime, 1) ~= size(D, 1)
+        error('dprime must be a numeric column vector with the same row count as D.');
+    end
+    if any(~isfinite(D(:))) || any(~isfinite(dprime(:)))
+        error('D and dprime must contain only finite values.');
+    end
+    if ~isfinite(norm(dprime)) || norm(dprime) == 0
+        error('dprime must have a finite, nonzero norm.');
+    end
+
+    n = size(D, 2);
+    Dprime = zeros(size(D), 'like', D);
+    Dprime(:, end) = dprime / norm(dprime);
+
+    removedFlag = false;
+    for k = n:-1:1
+        if removedFlag
+            index = k + 1;
+        else
+            index = k;
+        end
+        if index == 1
+            break;
+        end
+
+        d = D(:, k);
+        for i = index:1:n
+            d = d - (Dprime(:, i)' * d) * Dprime(:, i);
+        end
+
+        if ~isfinite(norm(d))
+            error('Orthogonalization produced a non-finite residual.');
+        end
+        if norm(d) <= 1e-12 * norm(D(:, k))
+            removedFlag = true;
+            continue
+        end
+
+        Dprime(:, index-1) = d / norm(d);
+    end
+end
+
+function evalHistPrime = ReOrganize(Bprime, B, evalHist)
+    if size(Bprime, 1) ~= size(B, 1) || size(Bprime, 2) ~= size(B, 2)
+        error('Bprime and B must have the same size.');
+    end
+    if numel(evalHist) ~= size(B, 2)
+        error('evalHist must contain one entry for each column of B.');
+    end
+
+    evalHistPrime = evalHist;
+    for j = 1:numel(evalHistPrime)
+        if ~isstruct(evalHistPrime{j}) || ...
+                ~all(isfield(evalHistPrime{j}, {'X', 'F', 'G'}))
+            error('evalHist entries must be structs with X, F, and G fields.');
+        end
+        evalHistPrime{j}.X = evalHistPrime{j}.X(:, []);
+        evalHistPrime{j}.F = evalHistPrime{j}.F(:, []);
+        evalHistPrime{j}.G = evalHistPrime{j}.G(:, []);
+    end
+    tol = 1e-12;
+    for i = 1:size(B, 2)
+        for j = 1:size(Bprime, 2)
+            dotProduct = B(:, i)' * Bprime(:, j);
+            tolerance = tol * norm(B(:, i)) * norm(Bprime(:, j));
+            if dotProduct > tolerance
+                %fprintf('Found a match for column %d of B in column %d of Bprime (dot product = %e, tolerance = %e)\n', i, j, dotProduct, tolerance);
+                %fprintf('EvalHist %d had %d entries.\n', i, numel(evalHist{i}));
+                evalHistPrime{j} = evalHist{i};
+                break;
+            end
+        end
     end
 end
 
