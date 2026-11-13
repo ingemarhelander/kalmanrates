@@ -9,11 +9,7 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
 %      inte den bästa punkten, bara en bättre. Returpunkten (högst uppmätt F)
 %      väljs i line_search_main, så villkoret betyder att den är bättre än
 %      startpunkten,
-%   2. alphaHat ligger för nära en redan utvärderad punkt (Req. 31), och
-%      någon giltig punkt har högre uppmätt F än startpunkten. Utan
-%      förbättring stoppar vi inte här, eftersom startpunkten då skulle
-%      returneras med alpha = 0. line_search_main ersätter i stället
-%      alphaHat med ett kortare steg (opts.shrinkFactor, opts.minStepRel),
+%   2. alphaHat ligger för nära en redan utvärderad punkt (Req. 31),
 %   3. den förutsagda ökningen p(alphaHat) - max_j p(alpha_j) är mindre än
 %      opts.noiseFactor gånger bruset, och någon giltig punkt har högre uppmätt F än startpunkten.
 %      Med få punkter kan fit.sigmaF vara modellfel snarare än brus och bli
@@ -48,7 +44,7 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
         reason = sprintf('lutningen har planat ut, |f''_j| <= %.2g |f''_0|, och F har ökat', opts.c);
         return
     end
-    if improved && too_close(alphaHat, alphas, opts.dMinRel)
+    if improved && min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
         reason = 'för nära en utvärderad punkt (Req. 31)';
         return
     end

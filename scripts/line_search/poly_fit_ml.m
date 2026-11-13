@@ -52,29 +52,24 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
         error('q must be a positive integer.');
     end
 
-    % Skala steglängderna till t = alpha/alphaScale i [0, 1]. Med korta steg
-    % (t.ex. alpha ~ 1e-6 när linjesökningen krympt steget) blir alpha^q så
-    % litet att designmatrisen blir numeriskt rangdefekt, fast punkterna
-    % bestämmer polynomet. I t blir lutningen St = S*alphaScale. Eftersom
-    % sigmaF och sigmaG skattas var för sig ändrar skalningen inte
-    % ML-lösningen; koefficienterna och sigmaG räknas om till alpha nedan.
+    % Anpassa i t = alpha/alphaScale, annars blir alpha^q för litet vid korta
+    % steg och designmatrisen numeriskt rangdefekt. Lutningen i t är S*alphaScale.
     alphaScale = max(abs(alpha));
     if alphaScale == 0
         alphaScale = 1;
     end
-    t  = alpha/alphaScale;
-    St = S*alphaScale;
+    S = S*alphaScale;
 
-    % Polynommatris och dess derivata (i t)
-    a = bsxfun(@power, t, 0:q);
+    % Polynommatris och dess derivata
+    a = bsxfun(@power, alpha/alphaScale, 0:q);
 
     b = [zeros(m,1), ...
-         bsxfun(@times, bsxfun(@power, t, 0:q-1), 1:q)];
+         bsxfun(@times, bsxfun(@power, alpha/alphaScale, 0:q-1), 1:q)];
 
 
     % Check that the polynomial coefficients are identifiable (KAN TAS BORT EFTER TESTNING)
     if rank([a; b]) < q+1
-        error('poly_fit_ml:rankDeficient', ['The design matrix is rank deficient. ', ...
+        error(['The design matrix is rank deficient. ', ...
                'The selected step lengths cannot identify all coefficients.']);
     end
     
@@ -91,7 +86,7 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
     % är avrundningsfel. Golvet måste ligga över avrundningsfelen, annars
     % hoppar vikterna mellan varven och iterationen konvergerar aldrig.
     floorF = (1e-10*max(sqrt(mean(F.^2)), 1))^2;
-    floorG = (1e-10*max(sqrt(mean(St.^2)), 1))^2;
+    floorG = (1e-10*max(sqrt(mean(S.^2)), 1))^2;
 
     for k = 1:maxIter
 
@@ -100,13 +95,13 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
              sqrt(wG)*b];
 
         rhs = [sqrt(wF)*F;
-               sqrt(wG)*St];
+               sqrt(wG)*S];
 
         y = A \ rhs;
 
         % Residualer för respektive mätserie
         rF = F - a*y;
-        rG = St - b*y;
+        rG = S - b*y;
 
         % ML-skattning av brusvarianserna.
         % Motsvarar ekvation (38) och (39).
@@ -142,19 +137,18 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
          sqrt(wG)*b];
 
     rhs = [sqrt(wF)*F;
-           sqrt(wG)*St];
+           sqrt(wG)*S];
 
     y = A \ rhs;
 
     % Slutliga residualer och varianser
     rF = F - a*y;
-    rG = St - b*y;
+    rG = S - b*y;
 
     sigmaF2 = max(mean(rF.^2), floorF);
     sigmaG2 = max(mean(rG.^2), floorG);
 
-    % Resultat, omräknat från t till alpha: p(alpha) = sum y_k (alpha/alphaScale)^k,
-    % och lutningen i alpha är lutningen i t delad med alphaScale.
+    % Resultat, omräknat från t till alpha
     fit.y = y ./ alphaScale.^(0:q)';
 
     fit.rF = rF;
@@ -163,7 +157,7 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
     fit.sigmaF = sqrt(sigmaF2);
     fit.sigmaG = sqrt(sigmaG2)/alphaScale;
 
-    fit.wF = 1/fit.sigmaF^2;
+    fit.wF = 1/sigmaF2;
     fit.wG = 1/fit.sigmaG^2;
 
     % Information om iterationen
@@ -175,7 +169,7 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
 
         alphaPlot = linspace(min(alpha), max(alpha), 300)';
 
-        % Evaluate fitted polynomial (coefficients in alpha, not t)
+        % Evaluate fitted polynomial
         Fplot = polyval(flipud(fit.y), alphaPlot);
 
         % Evaluate derivative of fitted polynomial
@@ -198,7 +192,7 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
 
         % Derivative values
         subplot(2,1,2);
-        plot(alpha, S, 'ko', 'MarkerFaceColor', 'b');
+        plot(alpha, S/alphaScale, 'ko', 'MarkerFaceColor', 'b');
         hold on;
         plot(alphaPlot, Splot, 'r-', 'LineWidth', 1.5);
         xlabel('Step length \alpha');

@@ -45,18 +45,7 @@ function [q, fit, info] = select_poly_degree_lag1(alpha, F, S, qPrev)
     info = struct('q', [], 'rho', zeros(0, 2), 'tau', [], 'fits', {{}});
 
     for q = qMin:qMax
-        % Steglängder på mycket olika skalor (t.ex. efter att steget krympts)
-        % kan göra en högre grad numeriskt obestämd. Då behålls förra graden.
-        try
-            fitTry = poly_fit_ml(alpha, F, S, q, false);   % false: inga figurer
-        catch err
-            if q > qMin && strcmp(err.identifier, 'poly_fit_ml:rankDeficient')
-                q = q - 1;   % fit är fortfarande anpassningen för grad q - 1
-                break
-            end
-            rethrow(err);
-        end
-        fit = fitTry;
+        fit = poly_fit_ml(alpha, F, S, q, false);   % false: inga figurer
         r = [fit.rF(:), fit.rG(:)];
         % Exakt anpassning: residualerna är bara avrundningsfel
         isExact = norm(r(:)) <= tolExact*norm(data(:));

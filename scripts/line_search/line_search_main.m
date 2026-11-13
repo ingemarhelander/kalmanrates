@@ -26,12 +26,6 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   minPoints    (0)    stopp på lutning eller brus först när minst så många
 %                       punkter (startpunkten inräknad) är utvärderade
 %   degreeMethod ('lr') gradval i ml_poly_main, 'lr' eller 'lag1'
-%   shrinkFactor (10)   om ingen punkt är bättre än startpunkten och nästa
-%                       föreslagna steg är för nära en utvärderad punkt,
-%                       provas i stället minsta hittills provade steg
-%                       delat med shrinkFactor
-%   minStepRel   (1e-8) stopp utan förbättring när det krympta steget är
-%                       mindre än minStepRel gånger största steget
 
     if nargin < 8 || isempty(opts)
         opts = struct();
@@ -72,25 +66,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % isBetter styr bara trust region i find_step_length, inte när vi stoppar
         isBetter = isfinite(fTry) && fTry > f;
         [alphaHat, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
-
-        % Ingen giltig punkt är bättre än startpunkten och polynomets
-        % förslag ligger för nära en utvärderad punkt (typiskt nära 0, när
-        % f har ett smalt maximum som polynomet inte kan beskriva). Att
-        % stoppa här skulle ge alpha = 0 och samma startpunkt igen, så
-        % prova i stället ett kortare steg än alla hittills.
-        improved = max(evals.F(ok)) > f;
-        if ~improved && too_close(alphaHat, alphas, opts.dMinRel)
-            alphaHat = min(alphas(alphas > 0)) / opts.shrinkFactor;
-            if alphaHat < opts.minStepRel*max(alphas)
-                evals.AHat(end) = alphaHat;
-                evals.reason = sprintf(['ingen förbättring, steget har krympts under ' ...
-                                        'minStepRel = %.2g gånger största steget'], opts.minStepRel);
-                fprintf('    line search stop: %s\n', evals.reason);
-                stop = true;
-                break
-            end
-            fprintf('    line search: ingen förbättring och förslaget för nära en utvärderad punkt, krymper steget till %.4e\n', ...
-                    alphaHat);
+        % Ingen förbättring än och alphaHat för nära en utvärderad punkt:
+        % prova ett 10 gånger kortare steg i stället för att stoppa med alpha = 0
+        if ~(max(evals.F(ok)) > f) && min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
+            alphaHat = min(alphas(alphas > 0))/10;
         end
         evals.AHat(end) = alphaHat;
 
@@ -124,8 +103,7 @@ function opts = default_opts(opts)
 % Fyller i standardvärden för fält som saknas. Okända fält ger fel, så att
 % ett felstavat namn i config-filen inte ignoreras i tysthet.
     def = struct('maxEvals', 20, 'c', 0.2, 'dMinRel', 1e-3, 'noiseFactor', 1, ...
-                 'minPoints', 0, 'degreeMethod', 'lr', 'shrinkFactor', 10, ...
-                 'minStepRel', 1e-8);
+                 'minPoints', 0, 'degreeMethod', 'lr');
     names = fieldnames(opts);
     unknown = names(~isfield(def, names));
     if ~isempty(unknown)

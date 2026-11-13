@@ -14,31 +14,21 @@ function d = find_search_direction(x, g, xLbd, D)
         fprintf('[find_search_direction] Använder normaliserad gradient som initial sökriktning.\n');
     else
         % 2. Orthonormalisation
-        % Ortogonalisera mot alla tidigare riktningar. Kolumnerna i D har
-        % skalats mot de nedre gränserna (se nedan) och har därför inte
-        % längd 1, och de behöver inte vara inbördes ortogonala. Därför
-        % projiceras d bort från en ortonormal bas för span(D), och inte
-        % mot kolumnerna en och en. Projektionen görs två gånger för att
-        % ta bort avrundningsfel (klassisk Gram-Schmidt med omortogonalisering).
+        % Gram-Schmidt ortogonalisering mot alla tidigare riktningar
         fprintf('[find_search_direction] Utför Gram-Schmidt mot %d tidigare riktning(ar)...\n', size(D, 2));
+        % Kolumnerna i D är skalade mot gränserna och inte ortonormala,
+        % så projicera mot en ortonormal bas för span(D)
         U = orth(D);
-        for pass = 1:2
-            d = d - U * (U' * d);
-        end
+        d = d - U * (U' * d);
         
-        % Normalisera den nya riktningen för att säkerställa att den är ortonormal.
-        % Toleransen är relativ till gradienten, som kan vara mycket stor.
+        % Normalisera den nya riktningen för att säkerställa att den är ortonormal
         norm_d = norm(d);
         if norm_d > 1e-10 * norm(g)
             d = d / norm_d;
-            fprintf('[find_search_direction] Riktning framgångsrikt ortogonaliserad och normaliserad (andel av gradienten kvar: %.2e).\n', ...
-                    norm_d / norm(g));
+            fprintf('[find_search_direction] Riktning framgångsrikt ortogonaliserad och normaliserad.\n');
         else
-            fprintf('[find_search_direction] VARNING: Gradienten ryms helt i tidigare sökriktningar. Använder gradienten.\n');
-            d = g;
-            if norm(g) > 0
-                d = g / norm(g);
-            end
+            fprintf('[find_search_direction] VARNING: Gradienten ryms helt i tidigare sökriktningar.\n');
+            d = g; 
         end
     end
 
