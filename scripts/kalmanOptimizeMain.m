@@ -1,4 +1,4 @@
-% kalmanOptimize.m
+% kalmanOptimizeMain.m
 % Gradient ascent with backtracking line search for the Kalman objective.
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
@@ -6,12 +6,14 @@
 
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
+addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
 config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
 
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
+lineSearchFcn = select_line_search(config); % Line search method and its options
 
 [K, varInd, xLbd, x] = setup_problem();
 [f, g] = kalmanObj(x, K, mu, varInd);
@@ -20,6 +22,7 @@ D = [];           % All orthogonal search directions
 B = [];          % Last noisy_size search directions (one per column)
 evalHist = {};   % History of line search evaluations
 iter = 1;
+stalls = 0;      % Consecutive iterations where x did not change
 
 while true
     history = update_history(history, x, f, g);
@@ -28,7 +31,7 @@ while true
     d = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varInd);
+    [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
 
     %Print and update history
     print_iteration(iter, alpha, f, fNew, g, gNew);
@@ -36,6 +39,7 @@ while true
     evalHist = store_evals(evalHist, evals, noisy_size);
 
     %Iteration done, update counter and x f and g
+    xStart = x;
     [x, f, g] = update_step(xNew, fNew, gNew);
     iter = iter + 1;
 
@@ -51,11 +55,22 @@ while true
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
-            [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d_prime, K, mu, varInd);
+            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             [x, f, g] = update_step(xNew, fNew, gNew);
         end
 
         fprintf('Denoising done \n')
+    end
+
+    % Stop if x has not changed in 3 consecutive iterations
+    if isequal(x, xStart)
+        stalls = stalls + 1;
+        if stalls >= 3
+            fprintf('Stopping: x has not changed in %d consecutive iterations.\n', stalls);
+            break;
+        end
+    else
+        stalls = 0;
     end
 
     %Check if current step fulfills stop criterion.
@@ -77,6 +92,39 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
         fprintf('Maximum number of iterations\n');
         stop = true;
     end
+end
+
+function lineSearchFcn = select_line_search(config)
+% Returns the line search chosen by config.lineSearch (default backtracking).
+% Keys beginning with ls_ are passed, without the prefix, as options to the
+% polynomial line search (see line_search_main).
+
+    method = 'backtracking';
+    if isfield(config, 'lineSearch')
+        method = config.lineSearch;
+    end
+
+    lsOpts = struct();
+    keys = fieldnames(config);
+    for i = 1:numel(keys)
+        if startsWith(keys{i}, 'ls_')
+            lsOpts.(keys{i}(4:end)) = config.(keys{i});
+        end
+    end
+
+    switch lower(method)
+        case 'polynomial'
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd) ...
+                line_search_main(x, f, g, d, K, mu, varInd, lsOpts);
+        case 'backtracking'
+            if ~isempty(fieldnames(lsOpts))
+                warning('ls_ options are ignored by the backtracking line search.');
+            end
+            lineSearchFcn = @line_search;
+        otherwise
+            error('Unknown lineSearch in config: %s (use polynomial or backtracking)', method);
+    end
+    fprintf('Line search: %s\n', lower(method));
 end
 
 function print_iteration(iter, alpha, f, fNew, g, gNew)

@@ -16,16 +16,14 @@ function d = find_search_direction(x, g, xLbd, D)
         % 2. Orthonormalisation
         % Gram-Schmidt ortogonalisering mot alla tidigare riktningar
         fprintf('[find_search_direction] Utför Gram-Schmidt mot %d tidigare riktning(ar)...\n', size(D, 2));
-        for i = 1:size(D, 2)
-            d_prev = D(:, i);
-            % Projicera d på d_prev och subtrahera
-            proj = (d' * d_prev) * d_prev;
-            d = d - proj;
-        end
+        % Kolumnerna i D är skalade mot gränserna och inte ortonormala,
+        % så projicera mot en ortonormal bas för span(D)
+        U = orth(D);
+        d = d - U * (U' * d);
         
         % Normalisera den nya riktningen för att säkerställa att den är ortonormal
         norm_d = norm(d);
-        if norm_d > 1e-12
+        if norm_d > 1e-10 * norm(g)
             d = d / norm_d;
             fprintf('[find_search_direction] Riktning framgångsrikt ortogonaliserad och normaliserad.\n');
         else

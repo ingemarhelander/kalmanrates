@@ -28,19 +28,6 @@ function [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varIn
     end
 end
 
-function alpha = initial_step_length(g, d)
-% Steps are far too long in the beginning, so cap the step such that the
-% predicted (linear) increase in the objective is at most objInc.
-
-    objInc   = 1E2;
-    alphaMin = 1E-5;
-
-    alpha = 1;
-    alphaObjInc = objInc/(g'*d);
-    alpha = min(alpha, alphaObjInc);
-    alpha = max(alpha, alphaMin);
-end
-
 function print_line_search(lsIter, alpha, fNew, f, dfNew)
     fprintf('LS iteration %2d: alpha = %12d, fvalNew-fval = %12f, dfNew = %12d\n', lsIter, alpha, fNew-f, dfNew);
 
