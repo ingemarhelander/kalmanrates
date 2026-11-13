@@ -1,6 +1,6 @@
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 
-load(dataPath('kalmanDebug.mat'));
+[K, runOutputSuffix] = loadKalmanSample();
 thetaFInd = (1:length(K.thetaF));
 SigmavInd = (1:length(K.Sigmav))+thetaFInd(end);
 SigmawInd = (1:length(K.Sigmaw))+SigmavInd(end);
@@ -8,7 +8,7 @@ axInd = (1:length(K.ax))+SigmawInd(end);
 Sigma0Ind = (1:length(K.Sigma0))+axInd(end);
 EfVecInd = (1:length(K.Ef(:)))+Sigma0Ind(end);
 
-load(dataPath('kalmanXoptAll.mat'));
+load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
 x = xOptAll(:,end);
 
 % Generated xOptAll(:,3)
@@ -71,8 +71,8 @@ b   = [];
 [xOpt,f,exitflag,output,lambda,grad,hessian] = fmincon(@(x) kalmanObjMin(x, K, mu, varInd), x0,A,b,[],[],lb,ub,[],optionvec);
 xOpt2 = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)]; xOpt2(varInd) = xOpt;
 
-% xOptAll = [xOptAll xOpt]; fOptAll = [fOptAll kalmanObj(xOptAll(:,end), K, mu)]; save('kalmanXoptAll', 'xOptAll', 'fOptAll'); 
+% xOptAll = [xOptAll xOpt]; fOptAll = [fOptAll kalmanObj(xOptAll(:,end), K, mu)]; save(dataPath(['kalmanXoptAll' runOutputSuffix '.mat']), 'xOptAll', 'fOptAll');
 
-% xOptAll = [xOpt2]; fOptAll = [kalmanObj(xOptAll(:,end), K, mu)]; save('kalmanXoptAll', 'xOptAll', 'fOptAll');
-% xOptAll = [xOptAll xOpt2]; fOptAll = [fOptAll kalmanObj(xOptAll(:,end), K, mu)]; save('kalmanXoptAll', 'xOptAll', 'fOptAll');
+% xOptAll = [xOpt2]; fOptAll = [kalmanObj(xOptAll(:,end), K, mu)]; save(dataPath(['kalmanXoptAll' runOutputSuffix '.mat']), 'xOptAll', 'fOptAll');
+% xOptAll = [xOptAll xOpt2]; fOptAll = [fOptAll kalmanObj(xOptAll(:,end), K, mu)]; save(dataPath(['kalmanXoptAll' runOutputSuffix '.mat']), 'xOptAll', 'fOptAll');
 

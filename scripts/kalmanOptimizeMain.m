@@ -4,6 +4,7 @@
 
 %% ------------------------------ Main ------------------------------------
 
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 
 config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
@@ -32,7 +33,7 @@ while true
     %Print and update history
     print_iteration(iter, alpha, f, fNew, g, gNew);
     history.stepSizes(end+1, 1) = alpha;
-    evalHist = store_evals(evalHist, evals, noisy_size); 
+    evalHist = store_evals(evalHist, evals, noisy_size);
 
     %Iteration done, update counter and x f and g
     [x, f, g] = update_step(xNew, fNew, gNew);
@@ -44,9 +45,17 @@ while true
     end
     
     %Make sure the last n search direction is stored as a base B and run noisy optimization
-    B = store_direction(D, d, noisy_size);
+    [D, B] = store_direction(D, d, noisy_size);
     if iter > noisy_size
-        [x, f, g] = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd);
+        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config);
+        if ~any(d_prime)
+            fprintf('Denoising produced no feasible direction; skipping its line search.\n');
+        else
+            [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d_prime, K, mu, varInd);
+            [x, f, g] = update_step(xNew, fNew, gNew);
+        end
+
+        fprintf('Denoising done \n')
     end
 
     %Check if current step fulfills stop criterion.
@@ -75,14 +84,16 @@ function print_iteration(iter, alpha, f, fNew, g, gNew)
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
-function B = store_direction(D, d, noisy_size)
+function [D, B] = store_direction(D, d, noisy_size)
 % Keeps only the noisy_size most recent search directions (one per column).
 
     D = [D, d]; % adds last search direction to matrix with all previous search directions
-    if size(D, 2) > noisy_size
+    disp(D)
+    fprintf('%3d',size(D, 2))
+    if size(D, 2) >= noisy_size
         B = D(:, end-noisy_size+1:end);
     else
-    B = D;
+    B = []; 
     end
 end
 
@@ -103,13 +114,7 @@ function [K, varInd, xLbd, x] = setup_problem()
 % Loads data, sets the starting point, selects which variables to optimize
 % and builds the lower bounds for them.
 
-    S = load('kalmanDebug.mat');
-    if isfield(S, 'K')
-        K = S.K;
-    else
-        S = load('kalmanDebugR.mat');
-        K = S.K;
-    end
+    K = loadKalmanSample();
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -120,7 +125,7 @@ function [K, varInd, xLbd, x] = setup_problem()
     EfVecInd  = (1:length(K.Ef(:)))  + Sigma0Ind(end);
 
     % Start from the first stored optimum
-    S = load('kalmanXoptAll.mat');
+    S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
     xOpt = S.xOptAll(:,1);
     K.thetaF = xOpt(thetaFInd);
     K.Sigmaw = xOpt(SigmawInd);

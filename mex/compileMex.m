@@ -1,18 +1,33 @@
-% Run from the mex/ folder (cd mex) - include/library paths are relative to it.
-mex  -I../../../../prog/diverse/boost_1_67_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/diverse/boost_1_67_0/stage/lib -lboost_date_time-vc141-mt-x64-1_67 mexKalmanLogLikelihood.cpp
-return
+function compileMex(boostDir)
+% Build the likelihood and AD test with local sparseMatrix.h and Boost headers.
+%   compileMex('C:/path/to/boost_1_67_0')
+% Without an argument, use BOOST_ROOT or ~/Documents/boost_1_67_0 on Windows.
+mexDir = fileparts(mfilename('fullpath'));
+testMexDir = fullfile(fileparts(mexDir), 'tests', 'mex');
+if nargin < 1 || isempty(boostDir)
+  boostDir = getenv('BOOST_ROOT');
+  if isempty(boostDir)
+    boostDir = fullfile(getenv('USERPROFILE'), 'Documents', 'boost_1_67_0');
+  end
+end
+boostDir = char(boostDir);
+assert(isfile(fullfile(boostDir, 'boost', 'numeric', 'ublas', 'matrix.hpp')) && ...
+       isfile(fullfile(boostDir, 'boost', 'lexical_cast.hpp')), ...
+    'kalmanrates:MissingBoost', ...
+    'Pass the unpacked Boost directory to compileMex, or set BOOST_ROOT.');
+assert(~isempty(mex.getCompilerConfigurations('C++', 'Selected')), ...
+    'kalmanrates:MissingCppCompiler', 'Configure a compiler using mex -setup cpp.');
 
-% mex  -I../../../../prog/boost_1_57_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/boost_1_57_0/stage/lib mexPortfolio.cpp
-%mex  -I../../../../prog/boost_1_57_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/boost_1_57_0/bin.v2/libs/date_time/build/msvc-10.0/release/link-static/threading-multi -lboost_date_time-vc100-mt-1_57 mexPortfolio.cpp
-% mex  -I../../../../prog/diverse/boost_1_63_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinPortfolio/include mexPortfolio.cpp
-% mex  -I../../../../prog/diverse/boost_1_49_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/diverse/boost_1_49_0/bin.v2/libs/date_time/build/msvc-10.0/release/link-static/threading-multi -lboost_date_time-vc100-mt-1_57 mexPortfolio.cpp
-
-% Windows:
-% mex  -g -I../../../../prog/diverse/boost_1_67_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/diverse/boost_1_67_0/stage/lib -lboost_date_time-vc141-mt-x64-1_67 mexPortfolio.cpp
-mex  -I../../../../prog/diverse/boost_1_67_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/diverse/boost_1_67_0/stage/lib -lboost_date_time-vc141-mt-x64-1_67 mexPortfolio.cpp
-
-% Linux:
-% mex  -g -I../../../../prog/diverse/boost_1_67_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/diverse/boost_1_67_0/stage/lib mexPortfolio.cpp
-% mex  -I../../../../prog/diverse/boost_1_67_0 -I../../../../prog/XiMathBoost/include -I../../../../prog/XiFinBoost/include -I../../../../prog/XiFinPortfolio/include -L../../../../prog/diverse/boost_1_67_0/stage/lib mexPortfolio.cpp
-
-
+% uBLAS and lexical_cast are header-only. No XiMath/XiFin or date_time library
+% is linked; the sparse matrix implementation comes from this repository.
+mexOptions = {['-I' mexDir], ['-I' boostDir]};
+clear mexKalmanLogLikelihood testAdCountsMex
+% Build the small helper first, before replacing the production binary.
+mex(mexOptions{:}, '-outdir', testMexDir, ...
+    fullfile(testMexDir, 'testAdCountsMex.cpp'));
+mex(mexOptions{:}, '-outdir', mexDir, ...
+    fullfile(mexDir, 'mexKalmanLogLikelihood.cpp'));
+rehash
+fprintf('Built likelihood and AD test using Boost in %s.\n', boostDir);
+which mexKalmanLogLikelihood -all
+end
