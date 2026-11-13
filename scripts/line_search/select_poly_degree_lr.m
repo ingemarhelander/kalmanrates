@@ -27,7 +27,15 @@ function [q, fit, info] = select_poly_degree_lr(alpha, F, S)
     fit = poly_fit_ml(alpha, F, S, q, false);
     info = struct('q', q, 'LR', [], 'crit', crit, 'qMax', qMax, 'fits', {{fit}});
     while q < qMax
-        fitNext = poly_fit_ml(alpha, F, S, q + 1, false);
+        % Om grad q+1 inte går att bestämma (steg på mycket olika skalor), behåll q
+        try
+            fitNext = poly_fit_ml(alpha, F, S, q + 1, false);
+        catch err
+            if strcmp(err.identifier, 'poly_fit_ml:rankDeficient')
+                break
+            end
+            rethrow(err);
+        end
         LR = lr_statistic(fit, fitNext, m);
         info.LR(end+1) = LR;
         if LR <= crit

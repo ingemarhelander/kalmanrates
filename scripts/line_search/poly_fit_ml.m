@@ -69,7 +69,7 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
 
     % Check that the polynomial coefficients are identifiable (KAN TAS BORT EFTER TESTNING)
     if rank([a; b]) < q+1
-        error(['The design matrix is rank deficient. ', ...
+        error('poly_fit_ml:rankDeficient', ['The design matrix is rank deficient. ', ...
                'The selected step lengths cannot identify all coefficients.']);
     end
     
