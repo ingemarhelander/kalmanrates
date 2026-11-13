@@ -57,7 +57,7 @@ while true
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             [x, f, g] = update_step(xNew, fNew, gNew);
-            [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size);
+            [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
         end
 
         fprintf('Denoising done \n')
@@ -156,13 +156,14 @@ function evalHist = store_evals(evalHist, evals, noisy_size)
 end
 
 
-function [D, B, evalHist] = ReOrthoginalizeAndReOrganize(dprime, D, B, evalHist, noisy_size)
+function [D, B, evalHist] = ReOrthoginalizeAndReOrganize(dprime, D, B, evalHist, noisy_size, evals)
     Dprime = ReOrthogonalize(dprime, D);
     Bprime = Dprime(:, end-noisy_size+1:end);
     evalHistPrime = ReOrganize(Bprime, B, evalHist);
     D = Dprime;
     B = Bprime;
     evalHist = evalHistPrime;
+    evalHist{end} = evals; % Update the last entry with the new evaluations
 end
 
 function Dprime = ReOrthogonalize(dprime, D)
