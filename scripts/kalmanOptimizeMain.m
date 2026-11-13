@@ -18,7 +18,8 @@ lineSearchFcn = select_line_search(config); % Line search method and its options
 [K, varInd, xLbd, x] = setup_problem();
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
-D = [];          % Last noisy_size search directions (one per column)
+D = [];           % All orthogonal search directions 
+B = [];          % Last noisy_size search directions (one per column)
 evalHist = {};   % History of line search evaluations
 iter = 1;
 stalls = 0;      % Consecutive iterations where x did not change
@@ -47,16 +48,17 @@ while true
         break;
     end
     
-    %Make sure the last search direction is stored and run noisy optimization
-    D = store_direction(D, d, noisy_size);
+    %Make sure the last n search direction is stored as a base B and run noisy optimization
+    [D, B] = store_direction(D, d, noisy_size);
     if iter > noisy_size
-        d_prime = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, config);
+        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             [x, f, g] = update_step(xNew, fNew, gNew);
         end
+
         fprintf('Denoising done \n')
     end
 
@@ -130,12 +132,13 @@ function print_iteration(iter, alpha, f, fNew, g, gNew)
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
-function D = store_direction(D, d, noisy_size)
+function [D, B] = store_direction(D, d, noisy_size)
 % Keeps only the noisy_size most recent search directions (one per column).
-
-    D = [D, d];
-    if size(D, 2) > noisy_size
-        D = D(:, end-noisy_size+1:end);
+    D = [D, d]; % adds last search direction to matrix with all previous search directions
+    if size(D, 2) >= noisy_size
+        B = D(:, end-noisy_size+1:end);
+    else
+    B = []; 
     end
 end
 
