@@ -81,6 +81,8 @@ function B = store_direction(D, d, noisy_size)
     D = [D, d]; % adds last search direction to matrix with all previous search directions
     if size(D, 2) > noisy_size
         B = D(:, end-noisy_size+1:end);
+    else
+    B = D;
     end
 end
 
