@@ -231,7 +231,6 @@ flowchart TD
 - `testDataLimit.m` – dataurval, oförändrade parametrar och PCA med kort historik
 - `testAdCounts.m` och `mex/testAdCountsMex.cpp` – AD-räknaren
 - `test_denoise_quadratic_approximation.m` – denoising med syntetiska data
-- `testFindSearchDirection.m` – ortogonalisering av sökriktningen
 
 **docs/**
 
