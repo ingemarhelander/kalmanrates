@@ -13,55 +13,106 @@ mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
 
 [K, varInd, xLbd, x] = setup_problem();
-[f, g] = kalmanObj(x, K, mu, varInd);
-history = init_history(x);
-D = [];          % Last noisy_size search directions (one per column)
-evalHist = {};   % History of line search evaluations
-iter = 1;
 
-while true
-    history = update_history(history, x, f, g);
+numStarts = config.numStarts;
+rng(config.seed, 'twister');
 
-    %Find search direction d
-    d = find_search_direction(x, g, xLbd, D);
+% Första körningen använder den befintliga startpunkten.
+startPoints = repmat(x, 1, numStarts);
 
-    %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d, K, mu, varInd);
-
-    %Print and update history
-    print_iteration(iter, alpha, f, fNew, g, gNew);
-    history.stepSizes(end+1, 1) = alpha;
-    evalHist = store_evals(evalHist, evals, noisy_size); 
-
-    %Iteration done, update counter and x f and g
-    [x, f, g] = update_step(xNew, fNew, gNew);
-    iter = iter + 1;
-
-    %Check if current step fulfills stop criterion.
-    if fulfills_stop_criterion(g, iter, maxIter)
-        break;
-    end
-    
-    %Make sure the last search direction is stored and run noisy optimization
-    D = store_direction(D, d, noisy_size);
-    if iter > noisy_size
-        d_prime = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, config);
-        if ~any(d_prime)
-            fprintf('Denoising produced no feasible direction; skipping its line search.\n');
-        else
-            [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d_prime, K, mu, varInd);
-            [x, f, g] = update_step(xNew, fNew, gNew);
-        end
-        fprintf('Denoising done \n')
-    end
-
-    %Check if current step fulfills stop criterion.
-    if fulfills_stop_criterion(g, iter, maxIter)
-        break;
-    end
+% Övriga startpunkter får små multiplikativa störningar.
+for k = 2:numStarts
+    startPoints(:, k) = x .* exp( ...
+        config.startPerturbation .* randn(size(x)));
 end
 
+results = cell(numStarts, 1);
+
+for k = 1:numStarts
+    fprintf('Starting optimization run %d of %d\n', k, numStarts);
+
+    results{k} = run_single_start( ...
+        startPoints(:, k), K, mu, varInd, xLbd, ...
+        noisy_size, maxIter, config);
+end
+
+scores = cellfun(@(r) r.fFinal, results);
+[bestScore, bestIndex] = max(scores);
+bestResult = results{bestIndex};
+
+fprintf('Best objective: %.8g from run %d\n', bestScore, bestIndex);
+
 %% ------------------------------ Functions -------------------------------
+function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, maxIter, config)
+    % Kör optimeringen från en startpunkt.
+
+    x = x0;
+    [f, g] = kalmanObj(x, K, mu, varInd);
+
+    history = init_history(x);
+    D = [];          % Senaste noisy_size sökriktningarna
+    evalHist = {};   % Utvärderingar från linjesökningarna
+    iter = 1;
+
+    while true
+        history = update_history(history, x, f, g);
+
+        % Beräkna sökriktning
+        d = find_search_direction(x, g, xLbd, D);
+
+        % Linjesökning
+        [alpha, xNew, fNew, gNew, evals] = ...
+            line_search(x, f, g, d, K, mu, varInd);
+
+        % Skriv ut och spara iterationen
+        print_iteration(iter, alpha, f, fNew, g, gNew);
+        history.stepSizes(end + 1, 1) = alpha;
+        evalHist = store_evals(evalHist, evals, noisy_size);
+
+        % Uppdatera x, f och g
+        [x, f, g] = update_step(xNew, fNew, gNew);
+        iter = iter + 1;
+
+        % Kontrollera stoppkriteriet
+        if fulfills_stop_criterion(g, iter, maxIter)
+            break;
+        end
+
+        % Spara sökriktningen och kör brusreducering när det finns
+        % tillräckligt många sökriktningar.
+        D = store_direction(D, d, noisy_size);
+
+        if iter > noisy_size
+            d_prime = denoise( ...
+                x, f, g, D, evalHist, noisy_size, ...
+                K, mu, varInd, xLbd, config);
+
+            if ~any(d_prime)
+                fprintf(['Denoising produced no feasible direction; ' ...
+                         'skipping its line search.\n']);
+            else
+                [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d_prime, K, mu, varInd);
+
+                [x, f, g] = update_step(xNew, fNew, gNew);
+            end
+
+            fprintf('Denoising done\n');
+        end
+
+        % Kontrollera stoppkriteriet igen
+        if fulfills_stop_criterion(g, iter, maxIter)
+            break;
+        end
+    end
+
+    % Resultatet som den yttre loopen kan jämföra mellan starter
+    result.xFinal = x;
+    result.fFinal = f;
+    result.gFinal = g;
+    result.history = history;
+    result.evalHist = evalHist;
+    result.iterations = iter - 1;
+end
 
 function stop = fulfills_stop_criterion(g, iter, maxIter)
 % Stop when the gradient is small or the iteration limit is reached.
