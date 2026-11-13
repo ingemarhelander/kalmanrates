@@ -44,7 +44,7 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
         reason = sprintf('lutningen har planat ut, |f''_j| <= %.2g |f''_0|, och F har ökat', opts.c);
         return
     end
-    if min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
+    if improved && min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
         reason = 'för nära en utvärderad punkt (Req. 31)';
         return
     end

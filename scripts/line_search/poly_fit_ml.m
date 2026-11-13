@@ -52,16 +52,24 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
         error('q must be a positive integer.');
     end
 
+    % Anpassa i t = alpha/alphaScale, annars blir alpha^q för litet vid korta
+    % steg och designmatrisen numeriskt rangdefekt. Lutningen i t är S*alphaScale.
+    alphaScale = max(abs(alpha));
+    if alphaScale == 0
+        alphaScale = 1;
+    end
+    S = S*alphaScale;
+
     % Polynommatris och dess derivata
-    a = bsxfun(@power, alpha, 0:q);
+    a = bsxfun(@power, alpha/alphaScale, 0:q);
 
     b = [zeros(m,1), ...
-         bsxfun(@times, bsxfun(@power, alpha, 0:q-1), 1:q)];
+         bsxfun(@times, bsxfun(@power, alpha/alphaScale, 0:q-1), 1:q)];
 
 
     % Check that the polynomial coefficients are identifiable (KAN TAS BORT EFTER TESTNING)
     if rank([a; b]) < q+1
-        error(['The design matrix is rank deficient. ', ...
+        error('poly_fit_ml:rankDeficient', ['The design matrix is rank deficient. ', ...
                'The selected step lengths cannot identify all coefficients.']);
     end
     
@@ -140,17 +148,17 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
     sigmaF2 = max(mean(rF.^2), floorF);
     sigmaG2 = max(mean(rG.^2), floorG);
 
-    % Resultat
-    fit.y = y;
+    % Resultat, omräknat från t till alpha
+    fit.y = y ./ alphaScale.^(0:q)';
 
     fit.rF = rF;
-    fit.rG = rG;
+    fit.rG = rG/alphaScale;
 
     fit.sigmaF = sqrt(sigmaF2);
-    fit.sigmaG = sqrt(sigmaG2);
+    fit.sigmaG = sqrt(sigmaG2)/alphaScale;
 
     fit.wF = 1/sigmaF2;
-    fit.wG = 1/sigmaG2;
+    fit.wG = 1/fit.sigmaG^2;
 
     % Information om iterationen
     fit.iterations = k;
@@ -162,10 +170,10 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
         alphaPlot = linspace(min(alpha), max(alpha), 300)';
 
         % Evaluate fitted polynomial
-        Fplot = polyval(flipud(y), alphaPlot);
+        Fplot = polyval(flipud(fit.y), alphaPlot);
 
         % Evaluate derivative of fitted polynomial
-        dy = (1:q)' .* y(2:end);
+        dy = (1:q)' .* fit.y(2:end);
         Splot = polyval(flipud(dy), alphaPlot);
 
         figure('Name', 'ML polynomial fit');
@@ -184,7 +192,7 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
 
         % Derivative values
         subplot(2,1,2);
-        plot(alpha, S, 'ko', 'MarkerFaceColor', 'b');
+        plot(alpha, S/alphaScale, 'ko', 'MarkerFaceColor', 'b');
         hold on;
         plot(alphaPlot, Splot, 'r-', 'LineWidth', 1.5);
         xlabel('Step length \alpha');

@@ -66,6 +66,17 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % isBetter styr bara trust region i find_step_length, inte när vi stoppar
         isBetter = isfinite(fTry) && fTry > f;
         [alphaHat, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
+        % Ingen förbättring än och alphaHat för nära en utvärderad punkt:
+        % prova ett 10 gånger kortare steg i stället för att stoppa med alpha = 0
+        if ~(max(evals.F(ok)) > f) && min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
+            alphaHat = min(alphas(alphas > 0))/10;
+            if alphaHat < 1e-8*max(alphas)   % ge upp, steget är försumbart
+                evals.reason = 'ingen förbättring, steget har krympts under 1e-8 gånger största steget';
+                fprintf('    line search stop: %s\n', evals.reason);
+                stop = true;
+                break
+            end
+        end
         evals.AHat(end) = alphaHat;
 
         % Stoppkriterier (komponent 10), prövas innan alphaHat utvärderas
