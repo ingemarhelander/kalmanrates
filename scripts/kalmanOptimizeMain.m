@@ -52,7 +52,7 @@ while true
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
-            [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d_prime, K, mu, varInd);
+            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             [x, f, g] = update_step(xNew, fNew, gNew);
         end
         fprintf('Denoising done \n')
