@@ -15,6 +15,15 @@ mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
 lineSearchFcn = select_line_search(config); % Line search method and its options
 
+% Number of consecutive iterations without progress before stopping.
+% After a failed step the next direction is g itself (see below), and from
+% the second failure on the main step repeats the same evaluations.
+maxStalls = 3;
+if isfield(config, 'maxStalls')
+    maxStalls = config.maxStalls;
+end
+stalls = 0;      % Consecutive iterations where x did not change
+
 [K, varInd, xLbd, x] = setup_problem();
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
@@ -37,6 +46,7 @@ while true
     evalHist = store_evals(evalHist, evals, noisy_size);
 
     %Iteration done, update counter and x f and g
+    xStart = x;
     [x, f, g] = update_step(xNew, fNew, gNew);
     iter = iter + 1;
 
@@ -47,7 +57,7 @@ while true
     
     %Make sure the last search direction is stored and run noisy optimization
     D = store_direction(D, d, noisy_size);
-    if iter > noisy_size
+    if size(D, 2) >= noisy_size
         d_prime = denoise(x, f, g, D, evalHist, noisy_size, K, mu, varInd, xLbd, config);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
@@ -56,6 +66,21 @@ while true
             [x, f, g] = update_step(xNew, fNew, gNew);
         end
         fprintf('Denoising done \n')
+    end
+
+    % Stop if x has not moved for maxStalls consecutive iterations. After a
+    % failed step x and g are unchanged, so g lies in span(D) and
+    % find_search_direction falls back to g itself; further stalled
+    % iterations would mostly repeat the same evaluations.
+    if isequal(x, xStart)
+        stalls = stalls + 1;
+        fprintf('No progress in this iteration (%d of %d in a row).\n', stalls, maxStalls);
+        if stalls >= maxStalls
+            fprintf('Stopping: x has not changed in %d consecutive iterations.\n', stalls);
+            break;
+        end
+    else
+        stalls = 0;
     end
 
     %Check if current step fulfills stop criterion.

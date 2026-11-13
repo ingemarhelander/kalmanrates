@@ -29,7 +29,16 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
         mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
-    [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, config.fixed_or_exact);
+    [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, config.fixed_or_exact);
+
+    % The sample points may not determine the model, e.g. when the last
+    % steps have hardly moved x or all lie along almost the same line. Then
+    % there is no reliable direction; the caller skips the line search.
+    if ~ok
+        fprintf('[denoise] Skipping denoising: the quadratic model is not determined by the sample points.\n');
+        d_prime = zeros(size(x));
+        return;
+    end
 
     % Check that q is finite.
     if any(~isfinite(q))
@@ -55,15 +64,17 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
 end
 
 
-function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, method)
+function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method)
 % Project X and G onto the span of B to get a smaller problem.
+% ok is false when the points do not determine the model (see
+% compute_quadratic_approximation); the other outputs are then NaN.
     Z = B' * X;
     Gsmall = B' * G;
     fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
         mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
     %Call the function that computes the quadratic approximation.
-    [Qsmall, qsmall, c, esmall] = compute_quadratic_approximation(Z, F, Gsmall, method);
+    [Qsmall, qsmall, c, esmall, ok] = compute_quadratic_approximation(Z, F, Gsmall, method);
 
 
     fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
@@ -76,7 +87,7 @@ function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, method)
 end
 
 
-function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
+function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method)
 % COMPUTE_QUADRATIC_APPROXIMATION  Fit one quadratic model to noisy f and g.
 %
 %   Inputs
@@ -90,6 +101,9 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
 %     c : scalar  value of the model at xbar
 %     e : (1+n) x m  noise terms. Row 1 is e_i (function noise),
 %                    rows 2..n+1 are ebar_i (gradient noise).
+%     ok : logical  false if the points do not determine the model
+%                   (S_bar singular after diagonal scaling). Q, q, c and e
+%                   are then NaN.
 %
 %   The model is centred at xbar = last column of X, and
 %       f_i = 1/2 dx_i' Q dx_i + q' dx_i + c + e_i + xi_i
@@ -206,11 +220,38 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
     % Make sure S_bar is exactly symmetric (removes rounding asymmetry)
     S_bar = 0.5 * (S_bar + S_bar');
 
+    % Diagonal (Jacobi) scaling before factorising. The unknowns vech(Q),
+    % q and c have very different scales when the steps are short
+    % (|dx|^2 << |dx| << 1), so S_bar is badly scaled even when the points
+    % determine the model well. With s = 1./sqrt(diag(S_bar)),
+    %   S_bar = diag(1./s) * S_scaled * diag(1./s),  diag(S_scaled) = 1,
+    % so  S_bar \ b = s .* (S_scaled \ (s .* b)).  The solution is the same,
+    % but the remaining ill-conditioning of S_scaled comes only from the
+    % geometry of the points (too few points, or points on too few lines).
+    ok = false;
+    Q = NaN(n, n);  q = NaN(n, 1);  c = NaN;  e = NaN(1 + n, m);
+    diagS = diag(S_bar);
+    if any(~(diagS > 0))
+        fprintf(['[denoise] The sample points do not vary in every coordinate ' ...
+                 'of the subspace; the quadratic model is not determined.\n']);
+        return;
+    end
+    s = 1 ./ sqrt(diagS);
+    S_scaled = S_bar .* (s * s');
+    S_scaled = 0.5 * (S_scaled + S_scaled');
+
     % Factorise once. S_bar is constant, so the factor can be reused in
     % every iteration. Needs S_bar positive definite, which requires
-    % enough points in general position (see note below).
-    %   S_bar = R' * R,  so  S_bar \ b = R \ (R' \ b)
-    R = chol(S_bar);
+    % enough points in general position.
+    %   S_scaled = R' * R,  so  S_bar \ b = s .* (R \ (R' \ (s .* b)))
+    rcondTol = 1e-12;
+    [R, notPosDef] = chol(S_scaled);
+    if notPosDef || rcond(S_scaled) < rcondTol
+        fprintf(['[denoise] The sample points do not determine the quadratic model ' ...
+                 '(rcond of scaled system = %.2e < %.0e).\n'], rcond(S_scaled), rcondTol);
+        return;
+    end
+    solveS = @(b) s .* (R \ (R' \ (s .* b)));
 
     % ------------------------------------------------------------------
     % Steps 5-7: solve the coupled equations (96)-(97) for the noise
@@ -222,13 +263,13 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
         [e_f, e_g] = fixed_point(F, G, ...
                                  a_all, A_all, ...
                                  w_xi, wbar_xi, w, wbar, ...
-                                 R);
+                                 solveS);
     elseif method == 1
         fprintf('Using direct solve to solve the noise system.\n');
         [e_f, e_g] = solve_noise_system(F, G, ...
                                         a_all, A_all, ...
                                         w_xi, wbar_xi, w, wbar, ...
-                                        R);
+                                        solveS);
     else
         error('denoise:UnknownMethod', 'Unknown method for solving the noise system.');
     end
@@ -254,7 +295,7 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
     end
 
     % Best y for these noise terms:  y = S_bar^{-1} alpha   (86)
-    y = R \ (R' \ alpha);
+    y = solveS(alpha);
 
     % ------------------------------------------------------------------
     % Unpack y = [vech(Q); q; c] into Q, q, c
@@ -275,11 +316,12 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
     % ------------------------------------------------------------------
     e = [ e_f ;      % row 1:     e_i
           e_g ];     % rows 2..:  ebar_i
+    ok = true;
 end
 
 
 function [e_f, e_g] = fixed_point(F, G, a_all, A_all, ...
-                                  w_xi, wbar_xi, w, wbar, R)
+                                  w_xi, wbar_xi, w, wbar, solveS)
 % FIXED_POINT  Solve the coupled noise equations (96)-(97) by iteration.
 %
 %   Inputs
@@ -291,7 +333,7 @@ function [e_f, e_g] = fixed_point(F, G, a_all, A_all, ...
 %     wbar_xi : 1 x m      Taylor-error weights, gradients
 %     w       : 1 x m      combined weights  w_i    = w_e_i    + w_xi_i
 %     wbar    : 1 x m      combined weights  wbar_i = wbar_e_i + wbar_xi_i
-%     R       : p x p      Cholesky factor, S_bar = R' * R
+%     solveS  : handle     solveS(b) = S_bar \ b (scaled Cholesky solve)
 %
 %   Outputs
 %     e_f : 1 x m      noise terms e_i on the function values
@@ -355,10 +397,10 @@ function [e_f, e_g] = fixed_point(F, G, a_all, A_all, ...
         end
 
         % --------------------------------------------------------------
-        % Step 2c: y = S_bar^{-1} * alpha, using the factor R
-        %   S_bar = R' * R   =>   y = R \ (R' \ alpha)
+        % Step 2c: y = S_bar^{-1} * alpha, using the scaled Cholesky
+        %   factor inside solveS
         % --------------------------------------------------------------
-        y = R \ (R' \ alpha);
+        y = solveS(alpha);
 
         % --------------------------------------------------------------
         % Step 3: update the noise terms
@@ -417,7 +459,7 @@ end
 
 
 function [e_f, e_g] = solve_noise_system(F, G, a_all, A_all, ...
-                                         w_xi, wbar_xi, w, wbar, R)
+                                         w_xi, wbar_xi, w, wbar, solveS)
 % SOLVE_NOISE_SYSTEM  Solve the stationarity conditions as M*x = b.
 %
 % The unknown vector is ordered as all function-noise terms first, followed
@@ -454,9 +496,9 @@ function [e_f, e_g] = solve_noise_system(F, G, a_all, A_all, ...
         diagonalW(gradientColumns) = wbar(i);
     end
 
-    % Apply S^{-1} using the Cholesky factor S = R' * R; do not form S^{-1}.
-    SInvB = R \ (R' \ B);
-    SInvBeta = R \ (R' \ beta);
+    % Apply S^{-1} with the scaled Cholesky factor; do not form S^{-1}.
+    SInvB = solveS(B);
+    SInvBeta = solveS(beta);
 
     % Form the Schur-complement system and remove tiny round-off asymmetry.
     M = diag(diagonalW) - B' * SInvB;

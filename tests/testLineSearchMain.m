@@ -76,6 +76,35 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyLessThanOrEqual(alpha, 0.5);
             testCase.verifyTrue(any(~isfinite(evals.F)));
         end
+
+        function narrowPeakNearStartIsFound(testCase)
+            % f(x) = mu*log(s0 + x) - L*x har ett smalt maximum nära 0, som
+            % log-barriären nära en nedre gräns i Kalmanproblemet. Första
+            % steget går förbi toppen och polynomet föreslår steg nära 0.
+            % Tidigare stoppade sökningen då ("för nära", Req. 31) med
+            % alpha = 0. Nu ska den krympa steget tills F ökar.
+            mu = 1e-2;  s0 = 1e-10;  L = 1e5;
+            K = @(x) deal(mu*log(s0 + x) - L*x, mu/(s0 + x) - L);
+            [f0, g0] = K(0);
+            [alpha, xNew, fNew, ~, evals] = runQuiet(0, f0, g0, 1, K, 'lr');
+            testCase.verifyGreaterThan(alpha, 0, evals.reason);
+            testCase.verifyGreaterThan(fNew, f0, evals.reason);
+            testCase.verifyEqual(xNew, alpha, 'AbsTol', 1e-15);
+        end
+
+        function noImprovementStopsWithStartPoint(testCase)
+            % Gradienten säger att f ökar, men f minskar längs hela linjen.
+            % Sökningen ska ge upp inom maxEvals och returnera startpunkten.
+            K = @(x) deal(-x, 1);
+            [f0, g0] = K(0);
+            [alpha, xNew, fNew, ~, evals] = runQuiet(0, f0, g0, 1, K, 'lr');
+            testCase.verifyEqual(alpha, 0);
+            testCase.verifyEqual(xNew, 0);
+            testCase.verifyEqual(fNew, f0);
+            testCase.verifyLessThanOrEqual(numel(evals.A), 21);
+            testCase.verifyNotEmpty(evals.reason);
+            testCase.verifyFalse(contains(evals.reason, 'för nära'), evals.reason);
+        end
     end
 end
 

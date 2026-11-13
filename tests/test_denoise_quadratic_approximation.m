@@ -30,6 +30,61 @@ function testSmoothSineFunction(testCase)
     checkDenoising(testCase, f, g, 33);
 end
 
+function testShortStepsAreWellConditioned(testCase)
+% Med mycket korta steg (|dx| ~ 1e-9) är S_bar dåligt skalad, eftersom
+% vech(Q)-delen växer som |dx|^2 (rcond ~ 1e-19 utan skalning). Den
+% diagonala skalningen ska ge rätt gradient utan varningar om nästan
+% singulär matris.
+    [f, g] = makeFunction(1);
+    previousRng = rng;
+    rngCleanup = onCleanup(@() rng(previousRng)); %#ok<NASGU>
+    rng(44, 'twister');
+
+    center = [0.35; -0.2];
+    X = [center + 1e-9 * randn(2, 8), center];
+    evals = sampleExact(f, g, X);
+
+    % Anropas utan evalc så att eventuella varningar säkert registreras.
+    estimatedDirection = testCase.verifyWarningFree(@() denoise(center, ...
+        evals.F(end), evals.G(:, end), eye(2), {evals}, 2, [], [], [], ...
+        -inf(2, 1), struct('fixed_or_exact', 1)));
+
+    trueDirection = g(center) / norm(g(center));
+    verifyLessThan(testCase, norm(estimatedDirection - trueDirection), 1e-6);
+end
+
+function testPointsOnOneLineSkipDenoising(testCase)
+% Alla punkter på en linje bestämmer inte den kvadratiska modellen i två
+% dimensioner. denoise ska då returnera nollriktningen (huvudloopen hoppar
+% över linjesökningen) i stället för en opålitlig riktning.
+    [f, g] = makeFunction(1);
+    center = [0.35; -0.2];
+    X = center + [1; 0.5] * [-3e-4, -2e-4, -1e-4, 1e-4, 0];
+    evals = sampleExact(f, g, X);
+
+    direction = runDenoise(center, evals);
+
+    verifyEqual(testCase, direction, zeros(2, 1));
+end
+
+function evals = sampleExact(f, g, X)
+% Exakta funktionsvärden och gradienter i punkterna X (en per kolumn).
+    evals.X = X;
+    evals.F = zeros(1, size(X, 2));
+    evals.G = zeros(size(X));
+    for sample = 1:size(X, 2)
+        evals.F(sample) = f(X(:, sample));
+        evals.G(:, sample) = g(X(:, sample));
+    end
+end
+
+function direction = runDenoise(center, evals)
+% denoise med identitetsriktningar, utan utskrifter.
+    direction = [];
+    evalc(['direction = denoise(center, evals.F(end), evals.G(:, end), eye(2), ' ...
+           '{evals}, 2, [], [], [], -inf(2, 1), struct(''fixed_or_exact'', 1));']);
+end
+
 function checkDenoising(testCase, f, g, seed)
 % Sample a small cloud around one point and add modest measurement noise.
     previousRng = rng;
