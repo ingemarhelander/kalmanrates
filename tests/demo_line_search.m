@@ -47,7 +47,9 @@ function demo_line_search(method)
         [f0, g0] = K(x0);
         fprintf('\n%s, %s:\n', method, runs{k, 1});
         out = struct('name', runs{k, 1}, 'method', method, 'f0', f0);
-        [out.alpha, ~, out.fNew, ~, out.evals] = line_search_main(x0, f0, g0, d, K, [], [], method, runs{k, 2});
+        opts = runs{k, 2};
+        opts.degreeMethod = method;
+        [out.alpha, ~, out.fNew, ~, out.evals] = line_search_main(x0, f0, g0, d, K, [], [], opts);
         out.S = d'*out.evals.G;                       % lutning längs d i varje punkt
         results{k} = out;
         plotRounds(out, fLine);

@@ -1,7 +1,7 @@
 function [q, fit, info] = select_poly_degree_lr(alpha, F, S)
 % select_poly_degree_lr - Väljer polynomgrad med likelihoodkvottest (PROTOTYP).
 %
-% Alternativ till select_poly_degree (lag-1). Provar q = 2, 3, ... och höjer
+% Alternativ till select_poly_degree_lag1. Provar q = 2, 3, ... och höjer
 % graden så länge grad q+1 är signifikant bättre (lr_statistic > crit).
 % Högsta grad är m - 2, så att varken F eller S kan anpassas exakt.
 % Ingen hysteres (qPrev).
@@ -28,7 +28,7 @@ function [q, fit, info] = select_poly_degree_lr(alpha, F, S)
     info = struct('q', q, 'LR', [], 'crit', crit, 'qMax', qMax, 'fits', {{fit}});
     while q < qMax
         fitNext = poly_fit_ml(alpha, F, S, q + 1, false);
-        LR = lr_statistic(fit, fitNext, m, q);
+        LR = lr_statistic(fit, fitNext, m);
         info.LR(end+1) = LR;
         if LR <= crit
             break                    % q+1 är inte signifikant bättre

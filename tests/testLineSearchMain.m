@@ -94,11 +94,12 @@ function [f, g] = nanForLongSteps(K, x)
     end
 end
 
-function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, method, lsOpts)
-% line_search_main utan utskrifter.
+function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, method, opts)
+% line_search_main utan utskrifter. method blir opts.degreeMethod.
     if nargin < 7
-        lsOpts = [];
+        opts = struct();
     end
+    opts.degreeMethod = method;
     alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
-    evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], method, lsOpts);');
+    evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts);');
 end
