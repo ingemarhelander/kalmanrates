@@ -1,0 +1,30 @@
+
+name: MATLAB Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v3
+        with:
+          release: R2026b
+
+      - name: Run portable tests
+        uses: matlab-actions/run-command@v3
+        with:
+          command: |
+            setupPaths;
+            results = runtests({
+              'tests/testLineSearchMain.m'
+              'tests/test_denoise_quadratic_approximation.m'
+            });
+            assertSuccess(results);
