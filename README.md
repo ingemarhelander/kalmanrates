@@ -26,6 +26,8 @@ Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter. K
 
    För modellinitiering, RTS och figurer används `runReducedIrCurvesV2`. Se [toolboxkrav och felsökning](docs/felsokning.md).
 
+   För hela kurvflödet kör `scripts/runCurvePipelinePlots.m`.
+
 ## Välj antal dagar
 
 I `modelRunConfig.m` styr `config.maxObservations` både modellinitiering och optimering.
@@ -180,6 +182,7 @@ flowchart TD
 **scripts/**
 
 - `runTenorMultiIrCurves.m` – skattar forwardkurvor `f` och `π` per dag, sparar `data/EUR100.mat`
+- `runCurvePipelinePlots.m` – kör kurvbygge, modellinitiering, optimering och samlade plottar
 - `runReducedIrCurvesV2.m` – huvudskript: kör Init + Cls, RTS-iterationer, plottar
 - `runReducedIrCurvesInit.m` – PCA, ECB-datum och instrumentdata per dag
 - `runReducedIrCurvesCls.m` – startparametrar, skapar Kalman-objektet `K`

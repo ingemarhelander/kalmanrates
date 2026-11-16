@@ -15,7 +15,7 @@ mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
 lineSearchFcn = select_line_search(config); % Line search method and its options
 
-[K, varInd, xLbd, x] = setup_problem();
+[K, varInd, xLbd, x, runOutputSuffix] = setup_problem();
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];           % All orthogonal search directions 
@@ -78,6 +78,14 @@ while true
         break;
     end
 end
+
+% Store the final parameter vector in the Kalman model and return it in the output.
+parameterVector = [K.thetaF; K.Sigmav; K.Sigmaw; K.ax; K.Sigma0; K.Ef(:)];
+parameterVector(varInd) = x;
+K.storeParamVec(parameterVector);
+kalmanOptimizeMainOutput.parameterVector = parameterVector;
+save(dataPath(['kalmanOptimizeMainOutput' runOutputSuffix '.mat']), ...
+    'kalmanOptimizeMainOutput');
 
 %% ------------------------------ Functions -------------------------------
 
@@ -155,11 +163,11 @@ end
 
 %% Help function given by Jörgen.
 
-function [K, varInd, xLbd, x] = setup_problem()
+function [K, varInd, xLbd, x, runOutputSuffix] = setup_problem()
 % Loads data, sets the starting point, selects which variables to optimize
 % and builds the lower bounds for them.
 
-    K = loadKalmanSample();
+    [K, runOutputSuffix] = loadKalmanSample();
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -169,8 +177,8 @@ function [K, varInd, xLbd, x] = setup_problem()
     Sigma0Ind = (1:length(K.Sigma0)) + axInd(end);
     EfVecInd  = (1:length(K.Ef(:)))  + Sigma0Ind(end);
 
-    % Start from the first stored optimum
-    S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
+    optFile = dataPath('kalmanXoptAll.mat');
+    S = load(optFile, 'xOptAll');
     xOpt = S.xOptAll(:,1);
     K.thetaF = xOpt(thetaFInd);
     K.Sigmaw = xOpt(SigmawInd);
