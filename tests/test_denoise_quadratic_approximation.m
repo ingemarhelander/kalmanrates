@@ -5,6 +5,16 @@ function tests = test_denoise_quadratic_approximation
     tests = functiontests(localfunctions);
 end
 
+function setupOnce(testCase)
+    testCase.TestData.originalPath = path;
+    projectRoot = fileparts(fileparts(mfilename('fullpath')));
+    addpath(fullfile(projectRoot, 'scripts', 'functions'));
+end
+
+function teardownOnce(testCase)
+    path(testCase.TestData.originalPath);
+end
+
 function testQuadraticFunction(testCase)
     [f, g] = makeFunction(1);
     checkDenoising(testCase, f, g, 11);
@@ -22,7 +32,8 @@ end
 
 function checkDenoising(testCase, f, g, seed)
 % Sample a small cloud around one point and add modest measurement noise.
-    addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'functions'));
+    previousRng = rng;
+    rngCleanup = onCleanup(@() rng(previousRng)); %#ok<NASGU>
     rng(seed, 'twister');
 
     center = [0.35; -0.2];
@@ -59,7 +70,7 @@ function checkDenoising(testCase, f, g, seed)
     evals.F = noisyF;
     evals.G = noisyG;
     estimatedDirection = denoise(center, noisyF(end), noisyG(:, end), ...
-        eye(2), {evals}, 2, [], [], [], -inf(2, 1));
+        eye(2), {evals}, 2, [], [], [], -inf(2, 1), struct('fixed_or_exact', 1));
 
     trueDirection = trueGradient / norm(trueGradient);
     noisyCenterDirection = noisyG(:, end) / norm(noisyG(:, end));

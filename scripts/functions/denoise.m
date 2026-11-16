@@ -29,7 +29,12 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
         mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
-    [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, config.fixed_or_exact);
+    [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, config.fixed_or_exact);
+    if ~ok
+        fprintf('[denoise] The sample points do not determine the quadratic model; skipping.\n');
+        d_prime = zeros(size(x));
+        return;
+    end
 
     % Check that q is finite.
     if any(~isfinite(q))
@@ -55,7 +60,7 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
 end
 
 
-function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, method)
+function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method)
 % Project X and G onto the span of B to get a smaller problem.
     Z = B' * X;
     Gsmall = B' * G;
@@ -63,7 +68,7 @@ function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, method)
         mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
     %Call the function that computes the quadratic approximation.
-    [Qsmall, qsmall, c, esmall] = compute_quadratic_approximation(Z, F, Gsmall, method);
+    [Qsmall, qsmall, c, esmall, ok] = compute_quadratic_approximation(Z, F, Gsmall, method);
 
 
     fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
@@ -76,7 +81,7 @@ function [Q, q, c, e] = get_quadratic_approx_in_subspace(X, F, G, B, method)
 end
 
 
-function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
+function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method)
 % COMPUTE_QUADRATIC_APPROXIMATION  Fit one quadratic model to noisy f and g.
 %
 %   Inputs
@@ -206,11 +211,28 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
     % Make sure S_bar is exactly symmetric (removes rounding asymmetry)
     S_bar = 0.5 * (S_bar + S_bar');
 
+    % Diagonal scaling of the unknowns, y = s .* yScaled. With short steps
+    % vech(Q), q and c have very different scales and S_bar is badly scaled.
+    % a_all and A_all are scaled so the rest is unchanged; y is scaled back below.
+    % If the points do not determine the model, return ok = false.
+    ok = false;
+    Q = NaN(n, n);  q = NaN(n, 1);  c = NaN;  e = NaN(1 + n, m);
+    if any(~(diag(S_bar) > 0))
+        return;
+    end
+    s = 1 ./ sqrt(diag(S_bar));
+    a_all = s .* a_all;
+    A_all = A_all .* s';
+    S_bar = S_bar .* (s * s');
+    [R, notPosDef] = chol(S_bar);
+    if notPosDef || rcond(S_bar) < 1e-12
+        return;
+    end
+
     % Factorise once. S_bar is constant, so the factor can be reused in
     % every iteration. Needs S_bar positive definite, which requires
     % enough points in general position (see note below).
     %   S_bar = R' * R,  so  S_bar \ b = R \ (R' \ b)
-    R = chol(S_bar);
 
     % ------------------------------------------------------------------
     % Steps 5-7: solve the coupled equations (96)-(97) for the noise
@@ -255,6 +277,7 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
 
     % Best y for these noise terms:  y = S_bar^{-1} alpha   (86)
     y = R \ (R' \ alpha);
+    y = s .* y;
 
     % ------------------------------------------------------------------
     % Unpack y = [vech(Q); q; c] into Q, q, c
@@ -275,6 +298,7 @@ function [Q, q, c, e] = compute_quadratic_approximation(X, F, G, method)
     % ------------------------------------------------------------------
     e = [ e_f ;      % row 1:     e_i
           e_g ];     % rows 2..:  ebar_i
+    ok = true;
 end
 
 

@@ -44,7 +44,7 @@ toc
 end
 
 axRtsOpt = K.x{1};
-save(dataPath('axRtsOpt.mat'), 'axRtsOpt')
+save(dataPath(['axRtsOpt' runOutputSuffix '.mat']), 'axRtsOpt')
 
 %% Display solution
 
@@ -92,6 +92,9 @@ end
 gcf = figure(5);
 % plot(times, xc(:,1)*100, times, fInc);
 ind = (times >= datenum(2022,01,01));
+if ~any(ind)
+  ind = true(size(times)); % Early test samples still get a useful date range.
+end
 plot(times(ind), cbRate(ind) + xc(ind,1)*100, times(ind), cbRate(ind));
 datetick('x', 'yyyy');
 title('x step');
@@ -99,7 +102,7 @@ legend('Market implied policy rate', 'ECB policy rate')
 set(gcf,'Units','Inches');
 pos = get(gcf,'Position');
 set(gcf,'PaperPositionMode','Auto','PaperUnits','Inches','PaperSize',[pos(3),pos(4)]);
-saveas(gcf, fullfile(fileparts(mfilename('fullpath')), '..', 'docs', 'ecbCutsHikes.pdf'))
+saveas(gcf, fullfile(fileparts(mfilename('fullpath')), '..', 'docs', ['ecbCutsHikes' runOutputSuffix '.pdf']))
 
 
 pause(0.01);

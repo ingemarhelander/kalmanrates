@@ -1,16 +1,19 @@
-% kalmanOptimize.m
+% kalmanOptimizeMain.m
 % Gradient ascent with backtracking line search for the Kalman objective.
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
 
+run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
+addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
 config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
 
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
+lineSearchFcn = select_line_search(config); % Line search method and its options
 
 [K, varInd, xLbd, x] = setup_problem();
 
@@ -33,7 +36,7 @@ for k = 1:numStarts
 
     results{k} = run_single_start( ...
         startPoints(:, k), K, mu, varInd, xLbd, ...
-        noisy_size, maxIter, config);
+        noisy_size, maxIter, config, lineSearchFcn);
 end
 
 scores = cellfun(@(r) r.fFinal, results);
@@ -43,55 +46,51 @@ bestResult = results{bestIndex};
 fprintf('Best objective: %.8g from run %d\n', bestScore, bestIndex);
 
 %% ------------------------------ Functions -------------------------------
-function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, maxIter, config)
-    % Kör optimeringen från en startpunkt.
+
+function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, maxIter, config, lineSearchFcn)
 
     x = x0;
     [f, g] = kalmanObj(x, K, mu, varInd);
 
     history = init_history(x);
-    D = [];          % Senaste noisy_size sökriktningarna
-    evalHist = {};   % Utvärderingar från linjesökningarna
+    D = [];          % Alla sökriktningar
+    B = [];          % De senaste noisy_size sökriktningarna
+    evalHist = {};
     iter = 1;
+    stalls = 0;
 
     while true
         history = update_history(history, x, f, g);
 
-        % Beräkna sökriktning
         d = find_search_direction(x, g, xLbd, D);
 
-        % Linjesökning
         [alpha, xNew, fNew, gNew, evals] = ...
-            line_search(x, f, g, d, K, mu, varInd);
+            lineSearchFcn(x, f, g, d, K, mu, varInd);
 
-        % Skriv ut och spara iterationen
         print_iteration(iter, alpha, f, fNew, g, gNew);
         history.stepSizes(end + 1, 1) = alpha;
         evalHist = store_evals(evalHist, evals, noisy_size);
 
-        % Uppdatera x, f och g
+        xStart = x;
         [x, f, g] = update_step(xNew, fNew, gNew);
         iter = iter + 1;
 
-        % Kontrollera stoppkriteriet
         if fulfills_stop_criterion(g, iter, maxIter)
             break;
         end
 
-        % Spara sökriktningen och kör brusreducering när det finns
-        % tillräckligt många sökriktningar.
-        D = store_direction(D, d, noisy_size);
+        [D, B] = store_direction(D, d, noisy_size);
 
         if iter > noisy_size
             d_prime = denoise( ...
-                x, f, g, D, evalHist, noisy_size, ...
+                x, f, g, B, evalHist, noisy_size, ...
                 K, mu, varInd, xLbd, config);
 
             if ~any(d_prime)
                 fprintf(['Denoising produced no feasible direction; ' ...
                          'skipping its line search.\n']);
             else
-                [alpha, xNew, fNew, gNew, evals] = line_search(x, f, g, d_prime, K, mu, varInd);
+                [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
 
                 [x, f, g] = update_step(xNew, fNew, gNew);
             end
@@ -99,13 +98,22 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, maxIter,
             fprintf('Denoising done\n');
         end
 
-        % Kontrollera stoppkriteriet igen
+        if isequal(x, xStart)
+            stalls = stalls + 1;
+            if stalls >= 3
+                fprintf('Stopping: x has not changed in %d consecutive iterations.\n', ...
+                    stalls);
+                break;
+            end
+        else
+            stalls = 0;
+        end
+
         if fulfills_stop_criterion(g, iter, maxIter)
             break;
         end
     end
 
-    % Resultatet som den yttre loopen kan jämföra mellan starter
     result.xFinal = x;
     result.fFinal = f;
     result.gFinal = g;
@@ -127,17 +135,51 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
     end
 end
 
+function lineSearchFcn = select_line_search(config)
+% Returns the line search chosen by config.lineSearch (default backtracking).
+% Keys beginning with ls_ are passed, without the prefix, as options to the
+% polynomial line search (see line_search_main).
+
+    method = 'backtracking';
+    if isfield(config, 'lineSearch')
+        method = config.lineSearch;
+    end
+
+    lsOpts = struct();
+    keys = fieldnames(config);
+    for i = 1:numel(keys)
+        if startsWith(keys{i}, 'ls_')
+            lsOpts.(keys{i}(4:end)) = config.(keys{i});
+        end
+    end
+
+    switch lower(method)
+        case 'polynomial'
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd) ...
+                line_search_main(x, f, g, d, K, mu, varInd, lsOpts);
+        case 'backtracking'
+            if ~isempty(fieldnames(lsOpts))
+                warning('ls_ options are ignored by the backtracking line search.');
+            end
+            lineSearchFcn = @line_search;
+        otherwise
+            error('Unknown lineSearch in config: %s (use polynomial or backtracking)', method);
+    end
+    fprintf('Line search: %s\n', lower(method));
+end
+
 function print_iteration(iter, alpha, f, fNew, g, gNew)
     fprintf('Main loop iteration %3d: alpha = %14d, fNew-fPrev = %14f, fNew = %14f, norm of gPrev = %14d, norm of gNew = %14d\n', ...
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
-function D = store_direction(D, d, noisy_size)
+function [D, B] = store_direction(D, d, noisy_size)
 % Keeps only the noisy_size most recent search directions (one per column).
-
-    D = [D, d];
-    if size(D, 2) > noisy_size
-        D = D(:, end-noisy_size+1:end);
+    D = [D, d]; % adds last search direction to matrix with all previous search directions
+    if size(D, 2) >= noisy_size
+        B = D(:, end-noisy_size+1:end);
+    else
+    B = []; 
     end
 end
 
@@ -158,13 +200,7 @@ function [K, varInd, xLbd, x] = setup_problem()
 % Loads data, sets the starting point, selects which variables to optimize
 % and builds the lower bounds for them.
 
-    S = load('kalmanDebug.mat');
-    if isfield(S, 'K')
-        K = S.K;
-    else
-        S = load('kalmanDebugR.mat');
-        K = S.K;
-    end
+    K = loadKalmanSample();
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -175,7 +211,7 @@ function [K, varInd, xLbd, x] = setup_problem()
     EfVecInd  = (1:length(K.Ef(:)))  + Sigma0Ind(end);
 
     % Start from the first stored optimum
-    S = load('kalmanXoptAll.mat');
+    S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
     xOpt = S.xOptAll(:,1);
     K.thetaF = xOpt(thetaFInd);
     K.Sigmaw = xOpt(SigmawInd);
