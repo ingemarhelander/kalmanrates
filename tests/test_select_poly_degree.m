@@ -16,7 +16,7 @@ addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts', 'line_s
 
 rng(42);
 
-m = 40;
+m = 5
 alpha = sort(rand(m,1));
 
 % Verkligt tredjegradspolynom
@@ -42,7 +42,7 @@ S = S_true + noiseG*randn(m,1);
 
 %% Kör mult_q_poly_fits
 
-qMax = 5;
+qMax = 5
 
 fits = mult_q_poly_fits(alpha, F, S, qMax);
 

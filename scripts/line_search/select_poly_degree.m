@@ -65,8 +65,8 @@ function [q, fit, info] = select_poly_degree(fits, method, options)
     % Default settings (can be changed)
     defaults.maxAbsRho = 0.20;
     defaults.minTrendP = 0.05;
-    defaults.weights = [0.35 0.30 0.25 0.10];
-
+    defaults.weights = [0.25 0.20 0.15 0.40];
+    
     names = fieldnames(defaults);
     for k = 1:numel(names)
         name = names{k};
