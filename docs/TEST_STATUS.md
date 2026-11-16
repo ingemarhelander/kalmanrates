@@ -4,7 +4,10 @@
 **Senast inventerat:** 2026-11-16  
 **Källor:** `main`, GitHub Issues, `docs/utveckling.md`, krav- och designspecifikationer.
 
-> **Status är inte samma sak som Issue-status.** `Approved` kräver dokumenterad godkänd körning på en specifik commit. Den nya femfilerssviten har **ännu inte körts i CI** när detta dokument skapas. Den tidigare tvåfilerssviten passerade på commit `61f05edf` ([körning](https://github.com/ingemarhelander/kalmanrates/actions/runs/43884499822)).
+> **CI-status (2026-11-16):** Den utökade femfilerssviten har
+> passerat GitHub Actions på commit `107368a6` och `79214cf9`.
+> Detta verifierar att de automatiserade testerna passerar,
+> men inte att hela Kalmanmodellen är verifierad.
 
 ## Statusdefinitioner
 
@@ -21,10 +24,10 @@
 
 | Funktion | Status | Källor / tester | Nästa steg |
 |---|---|---|---|
-| Dataurval och PCA vid kort historik | **In testing** | [#1](https://github.com/ingemarhelander/kalmanrates/issues/1), `testDataLimit.m` | Kör utökad CI och komplettera med verkliga data. |
+| Dataurval och PCA vid kort historik | **In testing** | [#1](https://github.com/ingemarhelander/kalmanrates/issues/1), `testDataLimit.m` | CI godkänd. Komplettera med verkliga data. |
 | Linjesökning – syntetisk integration | **In testing** | [#10](https://github.com/ingemarhelander/kalmanrates/issues/10), `testLineSearchMain.m` | Tidigare CI godkänd; verifiera på verklig Kalman-målfunktion. |
-| ML-baserat polynomgradval | **In testing** | [#17](https://github.com/ingemarhelander/kalmanrates/issues/17), `testMlPolyMain.m` | Kör ny CI; verifiera modellval och gränsfall. |
-| Likelihood ratio-baserat gradval | **In testing** | [#14](https://github.com/ingemarhelander/kalmanrates/issues/14), `testSelectPolyDegreeLr.m` | Kör ny CI och kontrollera statistiska kriterier. |
+| ML-baserat polynomgradval | **In testing** | [#17](https://github.com/ingemarhelander/kalmanrates/issues/17), `testMlPolyMain.m` | CI godkänd; verifiera ytterligare gränsfall. |
+| Likelihood ratio-baserat gradval | **In testing** | [#14](https://github.com/ingemarhelander/kalmanrates/issues/14), `testSelectPolyDegreeLr.m` | CI godkänd. Kontrollera statistiska kriterier. |
 | Brusreducering/kvadratisk approximation | **In testing** | [#2](https://github.com/ingemarhelander/kalmanrates/issues/2), `test_denoise_quadratic_approximation.m` | Tidigare CI godkänd; komplettera med fler brusnivåer och integration. |
 | Stoppkriterier i linjesökningen | **In testing** / Design pending | [#36](https://github.com/ingemarhelander/kalmanrates/issues/36), [#38](https://github.com/ingemarhelander/kalmanrates/issues/38) | Fastställ vilket beteende som ska gälla, kontrollera aktuella testfall. |
 | Modifierad CG/sökriktning | **In testing** | [#5](https://github.com/ingemarhelander/kalmanrates/issues/5), `find_search_direction.m` | Testa syntetisk kvadratisk funktion, ortogonalitet och gränser. |
@@ -37,7 +40,7 @@
 
 ## Automatisk testning
 
-GitHub Actions-workflow: `.github/workflows/matlab-tests.yml`, körs vid varje push till `main` och manuellt via Actions. Fem MEX-oberoende testfiler ingår i den föreslagna utökningen:
+GitHub Actions-workflow: `.github/workflows/matlab-tests.yml`, körs vid varje push till `main` och manuellt via Actions. Fem MEX-oberoende testfiler ingår i den aktiva CI-testsviten och har passerat:
 
 ```matlab
 setupPaths
@@ -66,10 +69,12 @@ En rad får byta till **Approved** när:
 | Datum | Funktion | Commit | Miljö / data | Testkörning | Slutsats |
 |---|---|---|---|---|---|
 | 2026-11-16 | Syntetisk linjesökning och denoising (begränsat testurval) | `61f05edf` | GitHub Actions, Ubuntu, MATLAB R2026b | [MATLAB Tests](https://github.com/ingemarhelander/kalmanrates/actions/runs/43884499822) | CI success; **inte** fullständig funktionell verifiering |
+| 2026-11-16 | Utökad MATLAB-testsvit (5 filer) | `79214cf9` | Ubuntu, MATLAB R2026b | [Godkänd CI-körning](https://github.com/ingemarhelander/kalmanrates/actions/runs/43886139997) | Passed – ytterligare systemtestning återstår |
 
 ## Testplan framåt, i prioritetsordning
 
-1. Kör utökad femfilerssvit i CI och registrera resultatet.
+1. **Klart:** Utökad femfilerssvit körd och godkänd i CI.
+   Resultatet dokumenterat i verifieringsloggen.
 2. Identifiera testluckor i Req. 22–31 och följ upp [#38](https://github.com/ingemarhelander/kalmanrates/issues/38) vid ändrat stoppkriterium.
 3. Komplettera enhetstester för CG/Gram–Schmidt och Kalman/RTS med kända facit.
 4. Genomför integrationskontroll med riktiga EUR-data och jämför två linjesökningsmetoder från samma startpunkt.
