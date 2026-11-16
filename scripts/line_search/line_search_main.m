@@ -42,8 +42,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     evals.X = x;  evals.F = f;  evals.G = g;
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
     alphas = 0;                              % steglängd för varje kolumn i evals
-    alphaNew = initial_step_length(g, d);      % första nya punkten (Req. 22)
-    alphaMax = 5;                            % trust region (0, alphaMax]
+    % trust region (0, alphaMax]. Högst 1: find_search_direction skalar d så
+    % att alpha = 1 är det längsta steg som håller alla varianser positiva.
+    alphaMax = 1;
+    alphaNew = initial_step_length(g, d, alphaMax);      % första nya punkten (Req. 22)
     qPrev = [];                              % grad från förra varvet (hysteres)
     stop = false;                            % true när evaluate stoppat sökningen
 

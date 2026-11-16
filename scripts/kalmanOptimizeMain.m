@@ -65,7 +65,7 @@ while true
     % Stop if x has not changed in 3 consecutive iterations
     if isequal(x, xStart)
         stalls = stalls + 1;
-        if stalls >= 3
+        if stalls >= 50
             fprintf('Stopping: x has not changed in %d consecutive iterations.\n', stalls);
             break;
         end

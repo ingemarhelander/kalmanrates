@@ -17,7 +17,7 @@ function [alphaNew, alphaMax] = find_step_length(fit, alphaPrev, alphaMax, isBet
     %% Uppdatera trust region
 
     if ~isBetter
-        alphaMax = alphaPrev / 2;
+        alphaMax = alphaPrev / 5;
     end
 
     %% Hämta polynomkoefficienter
