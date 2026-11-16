@@ -42,7 +42,8 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
     improved = max(F(ok)) > F(1);    % returpunkten är bättre än startpunkten
     enough = numel(alphas) >= opts.minPoints;   % tillräckligt många punkter för kriterium 1 och 3
     if enough && abs(fj) <= opts.c*abs(f0) && improved
-        reason = sprintf('lutningen har planat ut, |f''_j| <= %.2g |f''_0|, och F har ökat', opts.c);
+        reason = sprintf(['uppmätta lutningen har planat ut, |dF/dalpha| = %.3g <= %.2g * startlutningen ' ...
+                          '= %.3g, och uppmätt F har ökat'], abs(fj), opts.c, opts.c*abs(f0));
         return
     end
     % Samma definition av "för nära" som i line_search_main, se too_close.

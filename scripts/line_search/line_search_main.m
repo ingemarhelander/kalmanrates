@@ -8,9 +8,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % (komponent 10) eller när maxEvals punkter är utvärderade.
 % Returnerar den giltiga utvärderade punkt som har störst uppmätt F.
 %
-% Skriver ut en rubrikrad med startlutningen f'_0, en rad per utvärderad
-% punkt (med vald grad och nästa föreslagna steg) och sist varför sökningen
-% stoppade och vilken punkt som valdes.
+% Skriver ut den uppmätta startlutningen, en tabell med en rad per utvärderad
+% punkt och sist varför sökningen stoppade och vilken punkt som valdes.
+% Tabellens vänstra del är uppmätt med kalmanObj (F-F0 och riktningsderivatan
+% dF/dalpha = g'*d), den högra kommer från det anpassade polynomet (grad,
+% föreslagen nästa steglängd och förutsagd ökning där).
 %
 % evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G).
 %   evals.A       steglängd för varje punkt (startpunkten har 0)
@@ -41,13 +43,21 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
     alphas = 0;                              % steglängd för varje kolumn i evals
     alphaNew = initial_step_length(g, d);      % första nya punkten (Req. 22)
-    alphaMax = 1;                            % trust region (0, alphaMax]
+    alphaMax = 5;                            % trust region (0, alphaMax]
     qPrev = [];                              % grad från förra varvet (hysteres)
     stop = false;                            % true när evaluate stoppat sökningen
 
     % Startlutningen f'_0 är det lutningsvillkoret jämför mot. Negativ
     % f'_0 betyder att d inte är en ökningsriktning.
-    fprintf('  Linjesökning: f''_0 = %+.2e, första steg %.2e\n', g'*d, alphaNew);
+    fprintf('  Linjesökning: uppmätt startlutning dF/dalpha(0) = %+.4e, första steg alpha = %.4e\n', ...
+            g'*d, alphaNew);
+    % Kolumnerna till vänster om | är uppmätta med kalmanObj i punkten alpha.
+    % Kolumnerna till höger kommer från polynomet p som anpassats till alla
+    % punkter hittills: dess grad, dess förslag på nästa alpha och den
+    % ökning det förutsäger där.
+    fprintf('        %-36s | %s\n', 'UPPMÄTT (kalmanObj)', 'POLYNOM (anpassat till punkterna hittills)');
+    fprintf('    %2s  %-10s  %-11s  %-11s | %-8s  %-11s  %s\n', ...
+            'nr', 'alpha', 'F-F0', 'dF/dalpha', 'polygrad', 'nästa alpha', 'p(nästa)-F0');
 
     for k = 1:maxEvals
         xTry = x + alphaNew*d;
@@ -57,8 +67,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         evals.Q(end+1) = NaN;  evals.AHat(end+1) = NaN;
         % Raden avslutas längre ner, när grad och nästa steg är kända. Början
         % skrivs redan här så att punkten syns även om anpassningen kraschar.
-        fprintf('    %2d: alpha = %.4e  f-f0 = %+.4e  f'' = %+.4e', ...
-                k, alphaNew, fTry - f, gTry'*d);
+        fprintf('    %2d  %.4e  %+.4e  %+.4e |', k, alphaNew, fTry - f, gTry'*d);
 
         % Punkter med NaN eller Inf tas inte med i anpassningen (Req. 42).
         % En sådan punkt är aldrig en förbättring: halvera steget och krymp
@@ -67,7 +76,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         if ~ok(end) || sum(ok) < 2
             alphaNew = alphaNew/2;
             alphaMax = min(alphaMax, alphaNew);
-            fprintf('  ogiltig punkt (NaN/Inf), nästa %.4e\n', alphaNew);
+            fprintf(' ingen anpassning (NaN/Inf), halverar till alpha = %.4e\n', alphaNew);
             continue
         end
         [qPrev, fit] = ml_poly_main(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev, method);
@@ -79,17 +88,19 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % Ingen förbättring än och alphaHat för nära en utvärderad punkt
         % (samma definition som i evaluate, se too_close): prova ett 10 gånger
         % kortare steg i stället för att stoppa med alpha = 0
+        note = '';
         if ~(max(evals.F(ok)) > f) && too_close(alphaHat, alphas, opts.dMinRel)
             alphaHat = min(alphas(alphas > 0))/10;
+            note = '  (polynomets förslag för nära en utvärderad punkt: minsta alpha/10)';
             if alphaHat < 1e-8*max(alphas)   % ge upp, steget är försumbart
-                fprintf('  grad %d\n', qPrev);
+                fprintf(' %8d\n', qPrev);
                 evals.reason = 'ingen förbättring, steget har krympts under 1e-8 gånger största steget';
                 stop = true;
                 break
             end
         end
         evals.AHat(end) = alphaHat;
-        fprintf('  grad %d  nästa %.4e\n', qPrev, alphaHat);
+        fprintf(' %8d  %.4e   %+.4e%s\n', qPrev, alphaHat, poly_value(fit, alphaHat) - f, note);
 
         % Stoppkriterier (komponent 10), prövas innan alphaHat utvärderas
         [stop, reason] = evaluate(fit, alphaHat, alphas, ok, evals.F, gTry'*d, g'*d, opts);
@@ -136,7 +147,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     end
     fprintf('  Stopp efter %d %s: %s\n', n, word, evals.reason);
     if alpha > 0
-        fprintf('  Valt: alpha = %.4e, f-f0 = %+.4e\n', alpha, fNew - f);
+        fprintf('  Valt: punkt nr %d, alpha = %.4e, uppmätt F-F0 = %+.4e\n', j - 1, alpha, fNew - f);
     else
         fprintf('  Valt: startpunkten (ingen förbättring)\n');
     end

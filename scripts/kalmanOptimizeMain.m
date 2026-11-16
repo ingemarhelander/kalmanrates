@@ -128,7 +128,7 @@ function lineSearchFcn = select_line_search(config)
 end
 
 function print_iteration(iter, alpha, f, fNew, g, gNew)
-    fprintf('Main loop iteration %3d: alpha = %14d, fNew-fPrev = %14f, fNew = %14f, norm of gPrev = %14d, norm of gNew = %14d\n', ...
+    fprintf('Main loop iteration %3d: alpha = %.4e, fNew-fPrev = %+.4e, fNew = %.6f, |gPrev| = %.4e, |gNew| = %.4e\n', ...
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
