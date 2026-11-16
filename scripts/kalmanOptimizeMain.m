@@ -180,7 +180,7 @@ function [K, varInd, xLbd, x] = setup_problem()
     K.Ef(:)  = xOpt(EfVecInd);
 
     % Which variables to optimize
-    optCase = 8;
+    optCase = 9;
     switch optCase
         case 1, varInd = [thetaFInd SigmavInd SigmawInd axInd Sigma0Ind EfVecInd];
         case 2, varInd = [SigmavInd SigmawInd axInd Sigma0Ind];
@@ -190,6 +190,7 @@ function [K, varInd, xLbd, x] = setup_problem()
         case 6, varInd = [thetaFInd SigmavInd SigmawInd Sigma0Ind];
         case 7, varInd = [thetaFInd];
         case 8, varInd = [SigmawInd];
+        case 9, varInd = [thetaFInd SigmavInd SigmawInd axInd Sigma0Ind];
     end
 
     xInitAll = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
