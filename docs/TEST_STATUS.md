@@ -70,6 +70,7 @@ En rad får byta till **Approved** när:
 |---|---|---|---|---|---|
 | 2026-11-16 | Syntetisk linjesökning och denoising (begränsat testurval) | `61f05edf` | GitHub Actions, Ubuntu, MATLAB R2026b | [MATLAB Tests](https://github.com/ingemarhelander/kalmanrates/actions/runs/43884499822) | CI success; **inte** fullständig funktionell verifiering |
 | 2026-11-16 | Utökad MATLAB-testsvit (5 filer) | `79214cf9` | Ubuntu, MATLAB R2026b | [Godkänd CI-körning](https://github.com/ingemarhelander/kalmanrates/actions/runs/43886139997) | Passed – ytterligare systemtestning återstår |
+| 2026-11-16 | Linjesökningens stoppkriterier (`testEvaluate.m`), utökad sexfilerssvit | `84a475d` | GitHub Actions, Ubuntu, MATLAB R2026b | [Godkänd CI-körning](https://github.com/ingemarhelander/kalmanrates/actions/runs/43897123079) | Passed – direkta tester av stoppkriterierna godkända; designändring #38 återstår |
 
 ## Testplan framåt, i prioritetsordning
 
