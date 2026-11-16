@@ -7,13 +7,13 @@ clear;
 clc;
 close all;
 
-%% Lägg till sökväg till funktionerna
+% --- Lägg till sökväg till funktionerna
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(projectRoot, 'scripts', 'line_search'));
 addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts', 'line_search'));
 
-%% Skapa testdata
+% --- Skapa testdata
 
 rng(42);
 
@@ -41,18 +41,18 @@ noiseG = 0.01;
 F = F_true + noiseF*randn(m,1);
 S = S_true + noiseG*randn(m,1);
 
-%% Kör mult_q_poly_fits
+% --- Kör mult_q_poly_fits
 
 qMax = 5;
 
 fits = mult_q_poly_fits(alpha, F, S, qMax);
 
-%% Kontrollera antal anpassningar
+% --- Kontrollera antal anpassningar
 
 assert(numel(fits) == qMax, ...
     'Incorrect number of polynomial fits.');
 
-%% Kontrollera att diagnostiken finns
+% --- Kontrollera att diagnostiken finns
 
 requiredFields = {
     'y'

@@ -14,8 +14,9 @@ maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
 lineSearchFcn = select_line_search(config); % Line search method and its options
+dataSel = read_data_selection(config); % Days and contracts for training and test
 
-[K, varInd, xLbd, x] = setup_problem();
+[K, varInd, xLbd, x, data] = setup_problem(dataSel);
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];           % All orthogonal search directions 
@@ -77,6 +78,13 @@ while true
     if fulfills_stop_criterion(g, iter, maxIter)
         break;
     end
+end
+
+%% Out-of-sample test with the optimized parameters
+if ~isempty(dataSel.test)
+    history.outOfSample = evaluateOutOfSample(data.K, data.times, data.keepInstr, ...
+        x, varInd, dataSel.train, dataSel.test);
+    print_out_of_sample(history.outOfSample);
 end
 
 %% ------------------------------ Functions -------------------------------
@@ -155,11 +163,12 @@ end
 
 %% Help function given by Jörgen.
 
-function [K, varInd, xLbd, x] = setup_problem()
+function [K, varInd, xLbd, x, data] = setup_problem(dataSel)
 % Loads data, sets the starting point, selects which variables to optimize
-% and builds the lower bounds for them.
+% and builds the lower bounds for them. K is the training data chosen in
+% the config; data holds the whole model for the out-of-sample test.
 
-    K = loadKalmanSample();
+    [K, times, ricAll] = loadKalmanModel();
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -192,6 +201,19 @@ function [K, varInd, xLbd, x] = setup_problem()
         case 8, varInd = [SigmawInd];
     end
 
+    % Parameters that belong only to contracts left out of the config do
+    % not affect the likelihood, so they are not optimized (the mu penalty
+    % alone would otherwise push them up without bound).
+    [keepInstr, labels] = selectInstruments(ricAll, K.nu, dataSel.tenors);
+    dropped = find(~keepInstr);
+    droppedState = K.ns + dropped;
+    unused = [thetaFInd(droppedState) SigmavInd(dropped) SigmawInd(droppedState) ...
+              axInd(droppedState) Sigma0Ind(droppedState)];
+    varInd = setdiff(varInd, unused, 'stable');
+    if isempty(varInd)
+        error('No parameters left to optimize for the chosen contracts.');
+    end
+
     xInitAll = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
     xLbdAll  = [-ones(size(K.thetaF))*inf ; zeros(size(K.Sigmav)) ; ...
                  zeros(size(K.Sigmaw)) ; -inf*ones(size(K.ax)) ; ...
@@ -199,6 +221,60 @@ function [K, varInd, xLbd, x] = setup_problem()
 
     x    = xInitAll(varInd);
     xLbd = xLbdAll(varInd);
+
+    % Keep the whole model (now holding the start parameters) for the test
+    trainIdx = selectDays(times, dataSel.train);
+    data = struct('K', K, 'times', times, 'keepInstr', keepInstr);
+    K = subsetKalmanModel(K, trainIdx, keepInstr);
+    print_data_selection(times(trainIdx), labels(keepInstr), dataSel);
+end
+
+function dataSel = read_data_selection(config)
+% Reads the data selection keys of the config (see kalmanOptimizeMain.config).
+% Missing keys mean: first/last day of the model, all weekdays, every day
+% and all contracts. Without test_start there is no out-of-sample test.
+
+    dataSel.train = struct( ...
+        'startDate', config_value(config, 'train_start', []), ...
+        'endDate',   config_value(config, 'train_end', []), ...
+        'weekdays',  config_value(config, 'weekdays', 'all'), ...
+        'dayStep',   config_value(config, 'day_step', 1));
+    dataSel.tenors = config_value(config, 'tenors', 'all');
+    dataSel.test = [];
+    if isfield(config, 'test_start')
+        dataSel.test = struct( ...
+            'startDate', config.test_start, ...
+            'endDate',   config_value(config, 'test_end', []));
+    end
+end
+
+function value = config_value(config, key, default)
+    value = default;
+    if isfield(config, key)
+        value = config.(key);
+    end
+end
+
+function print_data_selection(trainTimes, tenorLabels, dataSel)
+    fprintf('Training data: %d days, %s to %s (weekdays: %s, every %d. day)\n', ...
+        numel(trainTimes), datestr(floor(trainTimes(1)), 'yyyy-mm-dd'), ...
+        datestr(floor(trainTimes(end)), 'yyyy-mm-dd'), ...
+        char(string(dataSel.train.weekdays)), dataSel.train.dayStep);
+    fprintf('Contracts (%d): %s\n', numel(tenorLabels), strjoin(tenorLabels, ', '));
+end
+
+function print_out_of_sample(r)
+    if r.conditional
+        how = 'given all earlier days';
+    else
+        how = 'filter started at the first test day';
+    end
+    fprintf('\nOut-of-sample %s to %s (%s):\n', datestr(r.testStart, 'yyyy-mm-dd'), ...
+        datestr(r.testEnd, 'yyyy-mm-dd'), how);
+    fprintf('  Test:     log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.logLik, r.nDays, r.perDay, r.perObs);
+    fprintf('  Training: log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.trainLogLik, r.trainDays, r.trainPerDay, r.trainPerObs);
 end
 
 function [x, f, g] = update_step(xNew, fNew, gNew)

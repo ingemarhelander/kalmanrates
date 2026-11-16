@@ -7,7 +7,7 @@ close all;
 
 addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts', 'line_search'));
 
-%% Generate random mock data
+% --- Generate random mock data
 
 m = 15;
 
@@ -27,7 +27,7 @@ sigmaG = 0.15;
 F = F_true + sigmaF*randn(m,1);
 S = S_true + sigmaG*randn(m,1);
 
-%% Test mult_q_poly_fits
+% --- Test mult_q_poly_fits
 
 % Maximum polynomial degree
 qMax = 5;

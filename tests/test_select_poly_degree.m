@@ -6,13 +6,13 @@ clear;
 clc;
 close all;
 
-%% Lägg till sökväg till funktionerna
+% --- Lägg till sökväg till funktionerna
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(projectRoot, 'scripts', 'line_search'));
 addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts', 'line_search'));
 
-%% Skapa testdata
+% --- Skapa testdata
 
 rng(42);
 
@@ -40,7 +40,7 @@ noiseG = 0.1;
 F = F_true + noiseF*randn(m,1);
 S = S_true + noiseG*randn(m,1);
 
-%% Kör mult_q_poly_fits
+% --- Kör mult_q_poly_fits
 
 qMax = 5;
 
@@ -52,7 +52,7 @@ fits = mult_q_poly_fits(alpha, F, S, qMax);
 % Metod B: poängbaserad urval
 [qB, fitB, infoB] = select_poly_degree(fits, 'score');
 
-%% Skriv ut resultat
+% --- Skriv ut resultat
 
 fprintf('\nRESULTAT FRÅN POLYNOMVAL\n');
 
@@ -68,7 +68,7 @@ else
     fprintf('Metod B valde grad: %d\n', qB);
 end
 
-%% Kontrollera resultat
+% --- Kontrollera resultat
 
 assert(~isempty(qA), 'Metod A valde ingen grad.');
 assert(~isempty(qB), 'Metod B valde ingen grad.');
