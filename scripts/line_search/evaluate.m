@@ -9,7 +9,8 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
 %      inte den bästa punkten, bara en bättre. Returpunkten (högst uppmätt F)
 %      väljs i line_search_main, så villkoret betyder att den är bättre än
 %      startpunkten,
-%   2. alphaHat ligger för nära en redan utvärderad punkt (Req. 31),
+%   2. alphaHat ligger för nära en redan utvärderad punkt (too_close), och
+%      någon giltig punkt har högre uppmätt F än startpunkten (Req. 31),
 %   3. den förutsagda ökningen p(alphaHat) - max_j p(alpha_j) är mindre än
 %      opts.noiseFactor gånger bruset, och någon giltig punkt har högre uppmätt F än startpunkten.
 %      Med få punkter kan fit.sigmaF vara modellfel snarare än brus och bli
@@ -25,8 +26,8 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
 % fj, f0: uppmätt riktningsderivata g'*d i alpha_j respektive startpunkten.
 % opts.c:       konstant i lutningsvillkoret. För kvadratisk f tappas högst
 %               andelen c^2 av den möjliga ökningen längs d.
-% opts.dMinRel: minsta avstånd relativt största steget. Relativt stegen och
-%               inte alphaMax, som kan vara mycket större än stegen.
+% opts.dMinRel: minsta avstånd relativt det föreslagna steget alphaHat, se
+%               too_close. Mindre värde ger senare stopp.
 % opts.noiseFactor: faktor på fit.sigmaF i kriterium 3. Större värde ger
 %               tidigare stopp.
 % opts.minPoints: kriterium 1 och 3 får stoppa först när minst så många
@@ -44,12 +45,15 @@ function [stop, reason] = evaluate(fit, alphaHat, alphas, ok, F, fj, f0, opts)
         reason = sprintf('lutningen har planat ut, |f''_j| <= %.2g |f''_0|, och F har ökat', opts.c);
         return
     end
-    if improved && min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
+    % Samma definition av "för nära" som i line_search_main, se too_close.
+    if improved && too_close(alphaHat, alphas, opts.dMinRel)
         reason = 'för nära en utvärderad punkt (Req. 31)';
         return
     end
+    % TILLFÄLLIGT AVSTÄNGT: opts.noiseFactor = 0 (standardvärdet) hoppar över kriterium 3.
     % fit.sigmaF är ~0 vid exakt anpassning. Då stoppar bara de andra kriterierna.
-    if enough && improved && poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < opts.noiseFactor*fit.sigmaF
+    if opts.noiseFactor > 0 && enough && improved && ...
+            poly_value(fit, alphaHat) - max(poly_value(fit, alphas(ok))) < opts.noiseFactor*fit.sigmaF
         reason = sprintf('förutsagd ökning mindre än %.2g * bruset, och F har ökat', opts.noiseFactor);
         return
     end

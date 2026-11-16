@@ -21,8 +21,9 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   maxEvals     (20)   högsta antal nya punkter per sökriktning
 %   c            (0.2)  stopp när |f'_j| <= c |f'_0| (lutningen har planat ut)
 %   dMinRel      (1e-3) minsta avstånd till en utvärderad punkt, relativt
-%                       största steget (Req. 31)
-%   noiseFactor  (1)    stopp när förutsagd ökning < noiseFactor*sigmaF
+%                       det föreslagna steget alphaHat (Req. 31)
+%   noiseFactor  (0)    stopp när förutsagd ökning < noiseFactor*sigmaF.
+%                       0 stänger av kriteriet (tillfälligt standardvärde)
 %   minPoints    (0)    stopp på lutning eller brus först när minst så många
 %                       punkter (startpunkten inräknad) är utvärderade
 %   degreeMethod ('lr') gradval i ml_poly_main, 'lr' eller 'lag1'
@@ -66,9 +67,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % isBetter styr bara trust region i find_step_length, inte när vi stoppar
         isBetter = isfinite(fTry) && fTry > f;
         [alphaHat, alphaMax] = find_step_length(fit, alphaNew, alphaMax, isBetter);
-        % Ingen förbättring än och alphaHat för nära en utvärderad punkt:
-        % prova ett 10 gånger kortare steg i stället för att stoppa med alpha = 0
-        if ~(max(evals.F(ok)) > f) && min(abs(alphaHat - alphas)) < opts.dMinRel*max(alphas)
+        % Ingen förbättring än och alphaHat för nära en utvärderad punkt
+        % (samma definition som i evaluate, se too_close): prova ett 10 gånger
+        % kortare steg i stället för att stoppa med alpha = 0
+        if ~(max(evals.F(ok)) > f) && too_close(alphaHat, alphas, opts.dMinRel)
             alphaHat = min(alphas(alphas > 0))/10;
             if alphaHat < 1e-8*max(alphas)   % ge upp, steget är försumbart
                 evals.reason = 'ingen förbättring, steget har krympts under 1e-8 gånger största steget';
@@ -108,7 +110,7 @@ end
 function opts = default_opts(opts)
 % Fyller i standardvärden för fält som saknas. Okända fält ger fel, så att
 % ett felstavat namn i config-filen inte ignoreras i tysthet.
-    def = struct('maxEvals', 20, 'c', 0.2, 'dMinRel', 1e-3, 'noiseFactor', 1, ...
+    def = struct('maxEvals', 20, 'c', 0.2, 'dMinRel', 1e-3, 'noiseFactor', 0, ...
                  'minPoints', 0, 'degreeMethod', 'lr');
     names = fieldnames(opts);
     unknown = names(~isfield(def, names));

@@ -61,7 +61,7 @@ classdef testEvaluate < matlab.unittest.TestCase
         % ------------------- Kriterium 2, för nära (Req. 31) -------------------
         function tooCloseStops(testCase)
             a = baseline();
-            a.alphaHat = 0.2 + 1e-5;       % gränsen är 1e-3*0.2 = 2e-4
+            a.alphaHat = 0.2 + 1e-5;       % gränsen är 1e-3*alphaHat = 2e-4
             [stop, reason] = run(a);
             testCase.verifyTrue(stop);
             testCase.verifySubstring(reason, 'Req. 31');
@@ -87,18 +87,47 @@ classdef testEvaluate < matlab.unittest.TestCase
             testCase.verifySubstring(reason, 'Req. 31');
         end
 
-        function distanceIsRelativeToLargestStep(testCase)
-            % Samma avstånd 1e-3 till närmaste punkt. Med största steget 0.2
-            % är gränsen 2e-4 (inte för nära), med 2 är den 2e-3 (för nära).
+        function distanceIsRelativeToProposedStep(testCase)
+            % Största steget 1 var ett misslyckat långt steg, förbättringen
+            % finns vid 0.005. Avståndet 5e-4 dit är inte för nära (gränsen
+            % är 1e-3*0.0055 = 5.5e-6, inte 1e-3*1), men avståndet 1e-6 är det.
             a = baseline();
-            a.fit.sigmaF = 0;              % stäng av kriterium 3
-            a.alphaHat = 0.2 + 1e-3;
+            a.opts.noiseFactor = 0;        % stäng av kriterium 3
+            a.alphas = [0, 1, 0.005];
+            a.F = [0, -13, 0.05];
+            a.ok = [true, true, true];
+            a.alphaHat = 0.0055;
             testCase.verifyFalse(run(a));
-            a.alphas = [0, 2];
-            a.alphaHat = 2 + 1e-3;
+            a.alphaHat = 0.005 + 1e-6;
+            [stop, reason] = run(a);
+            testCase.verifyTrue(stop);
+            testCase.verifySubstring(reason, 'för nära');
+        end
+
+        function tooCloseToStartPointStops(testCase)
+            % alphaHat under dMinRel gånger det minsta utvärderade steget
+            % räknas som startpunkten (gränsen är 1e-3*1e-3 = 1e-6), så att
+            % sökningen inte kryper mot alpha = 0.
+            a = baseline();
+            a.opts.noiseFactor = 0;        % stäng av kriterium 3
+            a.alphas = [0, 1e-3];
+            a.F = [0, 1e-3];
+            a.alphaHat = 1e-5;
+            testCase.verifyFalse(run(a));
+            a.alphaHat = 1e-7;
             [stop, reason] = run(a);
             testCase.verifyTrue(stop);
             testCase.verifySubstring(reason, 'Req. 31');
+        end
+
+        function tooCloseToStartPointWithoutImprovementDoesNotStop(testCase)
+            % Det fallet tar line_search_main hand om.
+            a = baseline();
+            a.opts.noiseFactor = 0;
+            a.alphas = [0, 1e-3];
+            a.F = [0, -1e-3];
+            a.alphaHat = 1e-12;
+            testCase.verifyFalse(run(a));
         end
 
         % -------------------------- Kriterium 3, brus --------------------------
@@ -214,7 +243,7 @@ function a = baseline()
 % p(alpha) = alpha - 0.5*alpha^2, med maximum p(1) = 0.5. Två punkter är
 % utvärderade, alpha = 0 och 0.2, och F har ökat. Nästa steg är alphaHat = 1.
 %   1. lutning:  |f'_j| = 0.8 > c*|f'_0| = 0.2
-%   2. för nära: avståndet 0.8 > dMinRel*max(alphas) = 2e-4
+%   2. för nära: avståndet 0.8 > dMinRel*alphaHat = 1e-3
 %   3. brus:     förutsagd ökning p(1) - p(0.2) = 0.32 > sigmaF = 0.01
     a.fit.y = [0; 1; -0.5];
     a.fit.sigmaF = 0.01;
