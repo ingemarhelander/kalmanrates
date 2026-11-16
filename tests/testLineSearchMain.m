@@ -55,12 +55,13 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function minPointsGivesMorePoints(testCase)
             % Med minPoints = 6 får sökningen inte stoppa på lutning eller
-            % brus förrän 6 punkter finns, bara om nästa punkt är för nära.
+            % brus förrän 6 punkter finns, bara om nästa punkt är för nära
+            % (Req. 31, dit räknas också att sökningen nått taket).
             rng(1);
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lr', struct('minPoints', 6));
-            testCase.verifyTrue(numel(evals.A) >= 6 || contains(evals.reason, 'för nära'), evals.reason);
+            testCase.verifyTrue(numel(evals.A) >= 6 || contains(evals.reason, 'Req. 31'), evals.reason);
         end
 
         function nonFinitePointsAreSkipped(testCase)

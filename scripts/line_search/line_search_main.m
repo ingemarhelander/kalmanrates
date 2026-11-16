@@ -8,7 +8,9 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % (komponent 10) eller när maxEvals punkter är utvärderade.
 % Returnerar den giltiga utvärderade punkt som har störst uppmätt F.
 %
-% Skriver ut en rad per utvärderad punkt.
+% Skriver ut en rubrikrad med startlutningen f'_0, en rad per utvärderad
+% punkt (med vald grad och nästa föreslagna steg) och sist varför sökningen
+% stoppade och vilken punkt som valdes.
 %
 % evals: en kolumn per utvärderad punkt, startpunkten först (X, F, G).
 %   evals.A       steglängd för varje punkt (startpunkten har 0)
@@ -43,13 +45,19 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     qPrev = [];                              % grad från förra varvet (hysteres)
     stop = false;                            % true när evaluate stoppat sökningen
 
+    % Startlutningen f'_0 är det lutningsvillkoret jämför mot. Negativ
+    % f'_0 betyder att d inte är en ökningsriktning.
+    fprintf('  Linjesökning: f''_0 = %+.2e, första steg %.2e\n', g'*d, alphaNew);
+
     for k = 1:maxEvals
         xTry = x + alphaNew*d;
         [fTry, gTry] = kalmanObj(xTry, K, mu, varInd);
         evals.X(:, end+1) = xTry;  evals.F(end+1) = fTry;  evals.G(:, end+1) = gTry;
         alphas(end+1) = alphaNew; %#ok<AGROW>
         evals.Q(end+1) = NaN;  evals.AHat(end+1) = NaN;
-        fprintf('    line search eval %2d: alpha = %.4e, f-f0 = %+.4e, f'' = %+.4e\n', ...
+        % Raden avslutas längre ner, när grad och nästa steg är kända. Början
+        % skrivs redan här så att punkten syns även om anpassningen kraschar.
+        fprintf('    %2d: alpha = %.4e  f-f0 = %+.4e  f'' = %+.4e', ...
                 k, alphaNew, fTry - f, gTry'*d);
 
         % Punkter med NaN eller Inf tas inte med i anpassningen (Req. 42).
@@ -59,6 +67,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         if ~ok(end) || sum(ok) < 2
             alphaNew = alphaNew/2;
             alphaMax = min(alphaMax, alphaNew);
+            fprintf('  ogiltig punkt (NaN/Inf), nästa %.4e\n', alphaNew);
             continue
         end
         [qPrev, fit] = ml_poly_main(alphas(ok), evals.F(ok), evals.G(:, ok)'*d, qPrev, method);
@@ -73,18 +82,31 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         if ~(max(evals.F(ok)) > f) && too_close(alphaHat, alphas, opts.dMinRel)
             alphaHat = min(alphas(alphas > 0))/10;
             if alphaHat < 1e-8*max(alphas)   % ge upp, steget är försumbart
+                fprintf('  grad %d\n', qPrev);
                 evals.reason = 'ingen förbättring, steget har krympts under 1e-8 gånger största steget';
-                fprintf('    line search stop: %s\n', evals.reason);
                 stop = true;
                 break
             end
         end
         evals.AHat(end) = alphaHat;
+        fprintf('  grad %d  nästa %.4e\n', qPrev, alphaHat);
 
         % Stoppkriterier (komponent 10), prövas innan alphaHat utvärderas
         [stop, reason] = evaluate(fit, alphaHat, alphas, ok, evals.F, gTry'*d, g'*d, opts);
         if stop
-            fprintf('    line search stop: %s\n', reason);
+            % Polynomets max ligger på trust region-gränsen, som redan är
+            % utvärderad: sökningen har nått taket, och det är därför nästa
+            % punkt är "för nära". Säg det i klartext.
+            [dist, i] = min(abs(alphaHat - alphas));
+            if contains(reason, 'för nära') && alphaHat >= alphaMax*(1 - 1e-9) ...
+                    && dist <= opts.dMinRel*alphaHat && ok(i)
+                if evals.G(:, i)'*d > 0
+                    slope = 'positiv';
+                else
+                    slope = 'negativ';
+                end
+                reason = sprintf('nådde taket alpha = %.3g med %s lutning (Req. 31)', alphaMax, slope);
+            end
             evals.reason = reason;
             break
         end
@@ -92,7 +114,6 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     end
     if ~stop
         evals.reason = sprintf('maxEvals = %d punkter utvärderade', maxEvals);
-        fprintf('    line search stop: %s\n', evals.reason);
     end
     evals.A = alphas;
 
@@ -105,6 +126,20 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     xNew = evals.X(:, j);
     fNew = evals.F(j);
     gNew = evals.G(:, j);
+
+    % Sammanfattning: varför sökningen stoppade och vilken punkt som valdes
+    n = numel(alphas) - 1;
+    if n == 1
+        word = 'utvärdering';
+    else
+        word = 'utvärderingar';
+    end
+    fprintf('  Stopp efter %d %s: %s\n', n, word, evals.reason);
+    if alpha > 0
+        fprintf('  Valt: alpha = %.4e, f-f0 = %+.4e\n', alpha, fNew - f);
+    else
+        fprintf('  Valt: startpunkten (ingen förbättring)\n');
+    end
 end
 
 function opts = default_opts(opts)
@@ -113,7 +148,7 @@ function opts = default_opts(opts)
     def = struct('maxEvals', 20, 'c', 0.2, 'dMinRel', 1e-3, 'noiseFactor', 0, ...
                  'minPoints', 0, 'degreeMethod', 'lr');
     names = fieldnames(opts);
-    unknown = names(~isfield(def, names));
+    unknown = setdiff(names, fieldnames(def));   % fungerar även när opts saknar fält
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
     end
