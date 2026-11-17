@@ -1,4 +1,4 @@
-function d = find_search_direction(x, g, xLbd, D)
+function [d, D] = find_search_direction(x, g, xLbd, D)
 % find_search-direction Computes an orthonormalised search direction 
 % using a modified conjugate gradient / Gram-Schmidt approach.
 
@@ -38,9 +38,9 @@ function d = find_search_direction(x, g, xLbd, D)
             fprintf('[find_search_direction] Riktning framgångsrikt ortogonaliserad och normaliserad.\n');
         else
             fprintf('[find_search_direction] VARNING: Gradienten ryms helt i tidigare sökriktningar.\n');
-            d = g;
             if norm(g) > 0
-                d = g / norm(g);
+               d = g / norm(g);
+               D = [];
             end
         end
     end
