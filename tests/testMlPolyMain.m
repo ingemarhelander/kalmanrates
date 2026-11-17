@@ -100,6 +100,32 @@ classdef testMlPolyMain < matlab.unittest.TestCase
             end
             testCase.verifyGreaterThanOrEqual(mean(q == 2), 0.8);
         end
+
+        function scoreAndThresholdNeverGiveDegreeOne(testCase)
+            % Linjära data: grad 1 passar bäst men har inget maximum, så
+            % linjesökningen ska aldrig få den.
+            alpha = linspace(0, 1, 10)';
+            for method = {'score', 'threshold'}
+                rng(1);
+                F = 1 + 2*alpha + 0.01*randn(size(alpha));
+                S = 2 + 0.01*randn(size(alpha));
+                q = [];  fit = [];
+                evalc('[q, fit] = ml_poly_main(alpha, F, S, [], method{1});');
+                testCase.verifyGreaterThanOrEqual(q, 2, method{1});
+                testCase.verifyEqual(numel(fit.y), q + 1, method{1});
+            end
+        end
+
+        function scoreAndThresholdFallBackWithFewPoints(testCase)
+            % Två punkter räcker inte för diagnostiken: reserv q = 2.
+            for method = {'score', 'threshold'}
+                q = [];  fit = [];  info = [];
+                evalc('[q, fit, info] = ml_poly_main([0; 1], [0; 1], [2; -1], [], method{1});');
+                testCase.verifyEqual(q, 2, method{1});
+                testCase.verifyTrue(contains(info.status, 'fallback'), method{1});
+                testCase.verifyTrue(all(isfinite(fit.y)), method{1});
+            end
+        end
     end
 end
 

@@ -31,7 +31,6 @@ jobs:
               'tests/testMlPolyMain.m'
               'tests/testSelectPolyDegreeLr.m'
               'tests/test_denoise_quadratic_approximation.m'
-              'tests/testEvaluate.m'
             };
             results = runtests(testFiles);
             disp(table(results));

@@ -1,4 +1,4 @@
-function d = find_search_direction(x, g, xLbd, D)
+function [d, D] = find_search_direction(x, g, xLbd, D)
 % find_search-direction Computes an orthonormalised search direction 
 % using a modified conjugate gradient / Gram-Schmidt approach.
 
@@ -21,14 +21,32 @@ function d = find_search_direction(x, g, xLbd, D)
         U = orth(D);
         d = d - U * (U' * d);
         
+        % Ortonoaliseringkontroll
+        orth_error = max(abs(U' * d));
+        fprintf('[find_search_direction] [KONTROLL] Max ortogonaliseringsfel (U''*d): %.3e\n', orth_error);
+        if orth_error > 1e-6
+            fprintf('[find_search_direction] VARNING: Dålig ortogonalisering upptäcktes!\n');
+        end
+
         % Normalisera den nya riktningen för att säkerställa att den är ortonormal
         norm_d = norm(d);
         if norm_d > 1e-10 * norm(g)
             d = d / norm_d;
+           
+            % Normeringskorntroll
+            final_norm = norm(d);
+            fprintf('[find_search_direction] [KONTROLL] Slutlig norm(d) efter normalisering: %.6f (bör vara 1.0)\n', final_norm);
+            if abs(final_norm - 1.0) > 1e-6
+                fprintf('[find_search_direction] VARNING: Normaliseringen misslyckades!\n');
+            end
+
             fprintf('[find_search_direction] Riktning framgångsrikt ortogonaliserad och normaliserad.\n');
         else
             fprintf('[find_search_direction] VARNING: Gradienten ryms helt i tidigare sökriktningar.\n');
-            d = g; 
+            if norm(g) > 0
+               d = g / norm(g);
+               D = [];
+            end
         end
     end
 
@@ -49,7 +67,7 @@ function d = find_search_direction(x, g, xLbd, D)
     if alphaLbdMin < 1
         d = d * alphaLbdMin * 0.99;   % Ensures that alpha = 1 is feasible
     end
-
+    
     if any(isnan(d))
         error('Search direction contains NaN');
     end

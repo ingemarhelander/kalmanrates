@@ -1,4 +1,4 @@
-function alpha = initial_step_length(g, d)
+function alpha = initial_step_length(g, d, alphaMax)
 % initial_step_length - Step length to the first new point of the line search.
 %
 % The line search starts with one evaluated point (alpha = 0). It needs one
@@ -11,7 +11,7 @@ function alpha = initial_step_length(g, d)
 % find_search_direction only guarantees the lower bounds for alpha <= 1.
 
     deltaF   = 1E2;   % Predicted increase in the objective value at the first new point of the line search
-    alphaMin = 1E-5;  % Shortest allowed first step 
+    alphaMin = 0.25;  % Shortest allowed first step 
 
     slope = g'*d;     % Directional derivative at the start point
 
@@ -20,6 +20,6 @@ function alpha = initial_step_length(g, d)
     
     alpha = deltaF/slope;
     
-    alpha = min(alpha, 1);
+    alpha = min(alpha, alphaMax);
     alpha = max(alpha, alphaMin);
 end

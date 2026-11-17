@@ -4,9 +4,9 @@ function demo_line_search(method)
 % Målfunktionen har två variabler och brus på f och g. tests/stubs/kalmanObj.m
 % ersätter Kalman, så det behövs varken data eller mex. Line search körs två
 % gånger med samma slumptal:
-%   1. med standardinställningarna,
-%   2. med minPoints = 8: sökningen får inte stoppa på lutning eller brus
-%      förrän 8 punkter finns, så att gradvalet hinner prova fler grader.
+%   1. med standardinställningarna (dMin = 0.01),
+%   2. med dMin = 0.001: sökningen stoppar först när polynomets maximum
+%      ligger inom 0.001 från en utvärderad punkt, vilket ger fler punkter.
 %
 % För varje körning ritas en figur per varv: målfunktionen längs
 % sökriktningen, punkterna hittills (numrerade i ordning), ML-polynomet och
@@ -40,7 +40,7 @@ function demo_line_search(method)
     fLine = @(a) h(2*a) - 2*(0.5*a).^2;               % f längs d utan brus
 
     runs = {'standard', struct();
-            'minPoints = 8', struct('minPoints', 8)};
+            'dMin = 0.001', struct('dMin', 1e-3)};
     results = cell(1, size(runs, 1));
     for k = 1:size(runs, 1)
         rng(1);
@@ -170,5 +170,5 @@ function plotComparison(results, fLine)
     xlabel('Steglängd \alpha');
     ylabel('f(x_0 + \alpha d)');
     legend(handles, labels, 'Location', 'best');
-    title(sprintf('%s: standard mot minPoints = 8', results{1}.method));
+    title(sprintf('%s: standard mot dMin = 0.001', results{1}.method));
 end

@@ -126,10 +126,10 @@ function fit = poly_fit_ml(alpha, F, S, q, doPlot)
         end
     end
 
-    if converged
-        disp('ML iteration converged')
-    else
-        disp('Maximum number of iterations reached without convergence')
+    % Skriv bara ut när något är fel, så att utskriften från linjesökningen
+    % inte fylls av en rad per anpassning. fit.converged finns kvar.
+    if ~converged
+        fprintf('    poly_fit_ml: grad %d konvergerade inte på %d iterationer\n', q, maxIter);
     end
 
     % Beräkna om uppskattningarna med de slutliga vikterna

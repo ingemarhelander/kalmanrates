@@ -28,7 +28,7 @@ while true
     history = update_history(history, x, f, g);
 
     %Find search direction d
-    d = find_search_direction(x, g, xLbd, D);
+    [d, D] = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
     [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
@@ -129,7 +129,7 @@ function lineSearchFcn = select_line_search(config)
 end
 
 function print_iteration(iter, alpha, f, fNew, g, gNew)
-    fprintf('Main loop iteration %3d: alpha = %14d, fNew-fPrev = %14f, fNew = %14f, norm of gPrev = %14d, norm of gNew = %14d\n', ...
+    fprintf('Main loop iteration %3d: alpha = %.4e, fNew-fPrev = %+.4e, fNew = %.6f, |gPrev| = %.4e, |gNew| = %.4e\n', ...
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
