@@ -28,7 +28,7 @@ while true
     history = update_history(history, x, f, g);
 
     %Find search direction d
-    d = find_search_direction(x, g, xLbd, D);
+    [d, D] = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
     [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
@@ -49,18 +49,8 @@ while true
     end
     
     %Make sure the last n search direction is stored as a base B and run noisy optimization
-    % En riktning som inte gav något steg (alpha = 0) sparas inte: x har inte
-    % flyttats, och nästa varv skulle annars ortogonalisera bort hela gradienten.
-    if alpha > 0
-        [D, B] = store_direction(D, d, noisy_size);
-    else
-        D = [];   % omstart: nästa riktning blir den (projicerade) gradienten
-    end
-    % B har noisy_size kolumner först när så många steg med alpha > 0 är
-    % tagna. Annars kraschar denoise (B'*X), så hoppa över den.
-    if iter > noisy_size && size(B, 2) < noisy_size
-        fprintf('Denoising skipped: only %d of %d search directions stored.\n', size(B, 2), noisy_size);
-    elseif iter > noisy_size
+    [D, B] = store_direction(D, d, noisy_size);
+    if iter > noisy_size
         d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
@@ -75,7 +65,7 @@ while true
     % Stop if x has not changed in 3 consecutive iterations
     if isequal(x, xStart)
         stalls = stalls + 1;
-        if stalls >= 50
+        if stalls >= 3
             fprintf('Stopping: x has not changed in %d consecutive iterations.\n', stalls);
             break;
         end
