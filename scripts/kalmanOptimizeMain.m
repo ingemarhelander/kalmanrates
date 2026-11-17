@@ -49,7 +49,13 @@ while true
     end
     
     %Make sure the last n search direction is stored as a base B and run noisy optimization
-    [D, B] = store_direction(D, d, noisy_size);
+    % En riktning som inte gav något steg (alpha = 0) sparas inte: x har inte
+    % flyttats, och nästa varv skulle annars ortogonalisera bort hela gradienten.
+    if alpha > 0
+        [D, B] = store_direction(D, d, noisy_size);
+    else
+        D = [];   % omstart: nästa riktning blir den (projicerade) gradienten
+    end
     if iter > noisy_size
         d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config);
         if ~any(d_prime)
