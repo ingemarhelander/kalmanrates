@@ -39,9 +39,12 @@ function [q, fit, info] = select_poly_degree(fits, method, options)
 %              4. Model complexity (degree)
 %
 % DEFAULT OPTIONS
-%   options.weights         = [0.35 0.30 0.25 0.10]
+%   options.weights         = [0.25 0.20 0.15 0.40]
 %       Weights correspond to variance, autocorrelation, trend and
 %       complexity, respectively. They are normalized to sum to one.
+%   options.minDegree       = 1
+%       Lower degrees are never selected. The line search uses 2, since a
+%       line has no maximum.
 
     if nargin < 2 || isempty(method)
         method = 'threshold';
@@ -66,6 +69,7 @@ function [q, fit, info] = select_poly_degree(fits, method, options)
     defaults.maxAbsRho = 0.20;
     defaults.minTrendP = 0.05;
     defaults.weights = [0.25 0.20 0.15 0.40];
+    defaults.minDegree = 1;
     
     names = fieldnames(defaults);
     for k = 1:numel(names)
@@ -133,7 +137,8 @@ function [q, fit, info] = select_poly_degree(fits, method, options)
     degree = (1:nFits)';
     valid = converged & isfinite(sigmaF) & isfinite(sigmaG) & ...
             sigmaF > 0 & sigmaG > 0 & isfinite(rhoF) & ...
-            isfinite(rhoG) & isfinite(pTrendF) & isfinite(pTrendG);
+            isfinite(rhoG) & isfinite(pTrendF) & isfinite(pTrendG) & ...
+            degree >= options.minDegree;
 
     % Method A: choose the lowest degree that passes every threshold.
     accepted = valid & abs(rhoF) <= options.maxAbsRho & ...

@@ -1,87 +1,34 @@
-function [alphaNew, alphaMax] = find_step_length(fit, alphaPrev, alphaMax, isBetter)
-% find_step_length - Nästa steglängd från ML-polynomet.
+function alphaNew = find_step_length(fit, h, alphaMax)
+% find_step_length - Nästa steglängd: polynomets första maximum längs linjen.
 %
-% Söker efter den första lokala maximipunkten inom trust region
-% [0, alphaMax]. Om ingen sådan punkt hittas väljs alphaMax.
+% Går från alpha = 0 längs ML-polynomet med fasta steg h (h, 2h, 3h, ...
+% upp till alphaMax) och stannar första gången derivatan p'(alpha) blir
+% negativ. Då har polynomet passerat ett lokalt maximum mellan de två sista
+% stegen, och mittpunkten mellan dem returneras. Noggrannheten är h/2.
+%
+% Bara polynomet används, ingen kalmanObj, så h kan vara mycket litet.
+% Blir p' aldrig negativ före alphaMax ligger polynomets maximum på
+% gränsen, och alphaMax returneras.
 %
 % In:
-%   fit        Anpassningen från poly_fit_ml
-%   alphaPrev  Senast utvärderade steglängd
-%   alphaMax   Aktuell övre gräns för trust region
-%   isBetter   true om alphaPrev gav en förbättring
-%
+%   fit       anpassningen från ml_poly_main
+%   h         steglängd för promenaden längs polynomet
+%   alphaMax  längsta tillåtna steg
 % Ut:
-%   alphaNew   Nästa steglängd att utvärdera
-%   alphaMax   Uppdaterad trust region
+%   alphaNew  nästa steglängd att utvärdera med kalmanObj
 
-    %% Uppdatera trust region
+    % Alla steg på en gång (samma resultat som att gå ett steg i taget)
+    steps = min((1:ceil(alphaMax/h))*h, alphaMax);
+    k = find(poly_slope(fit, steps) < 0, 1);
 
-    if ~isBetter
-        alphaMax = alphaPrev / 5;
+    if isempty(k)
+        alphaNew = alphaMax;
+        return
     end
-
-    %% Hämta polynomkoefficienter
-
-    y = fit.y(:);
-    q = numel(y) - 1;
-
-    if q < 1
-        error('The fitted polynomial must have degree at least 1.');
-    end
-
-    %% Beräkna första- och andraderivatan
-
-    % P'(alpha)
-    dy = (1:q)' .* y(2:end);
-
-    % P''(alpha)
-    if q >= 2
-        ddy = (2:q)' .* (1:q-1)' .* y(3:end);
+    if k == 1
+        prev = 0;
     else
-        ddy = [];
+        prev = steps(k - 1);
     end
-
-    %% Hitta stationära punkter
-
-    % Nollställen till P'(alpha)
-    stationaryPoints = roots(flipud(dy));
-
-    % Behåll endast reella rötter
-    tol = 1e-10 * max(1, alphaMax);
-
-    isReal = abs(imag(stationaryPoints)) <= tol;
-    stationaryPoints = real(stationaryPoints(isReal));
-
-    % Behåll endast punkter inom trust region
-    insideRegion = stationaryPoints >= -tol & ...
-                   stationaryPoints <= alphaMax + tol;
-
-    stationaryPoints = stationaryPoints(insideRegion);
-
-    % Korrigera små numeriska avvikelser vid intervallets gränser
-    stationaryPoints = min(max(stationaryPoints, 0), alphaMax);
-
-    % Sortera i stigande ordning
-    stationaryPoints = sort(stationaryPoints);
-
-    %% Hitta första lokala maximum
-
-    alphaNew = alphaMax;
-
-    if q >= 2 && ~isempty(stationaryPoints)
-
-        % Beräkna andraderivatan i alla stationära punkter
-        secondDerivative = polyval(flipud(ddy), stationaryPoints);
-
-        % Ett lokalt maximum kräver P''(alpha) < 0
-        isMaximum = secondDerivative < 0;
-
-        % Välj den första stationära punkten som är ett lokalt maximum
-        firstMaximum = find(isMaximum, 1, 'first');
-
-        if ~isempty(firstMaximum)
-            alphaNew = stationaryPoints(firstMaximum);
-        end
-    end
-
+    alphaNew = (prev + steps(k))/2;
 end

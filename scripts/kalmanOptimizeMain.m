@@ -56,7 +56,11 @@ while true
     else
         D = [];   % omstart: nästa riktning blir den (projicerade) gradienten
     end
-    if iter > noisy_size
+    % B har noisy_size kolumner först när så många steg med alpha > 0 är
+    % tagna. Annars kraschar denoise (B'*X), så hoppa över den.
+    if iter > noisy_size && size(B, 2) < noisy_size
+        fprintf('Denoising skipped: only %d of %d search directions stored.\n', size(B, 2), noisy_size);
+    elseif iter > noisy_size
         d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');

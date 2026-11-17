@@ -1,8 +1,8 @@
 function p = poly_value(fit, alpha)
 % poly_value - Värdet av det anpassade polynomet p(alpha) längs linjen.
 %
-% Enda stället som känner till formatet på fit.y. Om formatet i poly_fit_ml
-% ändras behöver bara den här funktionen ändras.
+% Den här funktionen och poly_slope är de enda ställena som känner till
+% formatet på fit.y. Om formatet i poly_fit_ml ändras behöver bara de ändras.
 %
 % Antar att fit.y är koefficienterna för 1, alpha, alpha^2, ... som i poly_fit_ml.
 %
