@@ -57,10 +57,11 @@ while true
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             [x, f, g] = update_step(xNew, fNew, gNew);
+            [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
         end
-
         fprintf('Denoising done \n')
     end
+
 
     % Stop if x has not changed in 3 consecutive iterations
     if isequal(x, xStart)
@@ -151,6 +152,64 @@ function evalHist = store_evals(evalHist, evals, noisy_size)
     if numel(evalHist) > noisy_size
         evalHist = evalHist(end-noisy_size+1:end);
     end
+end
+
+
+function [D, B, evalHist] = ReOrthoginalizeAndReOrganize(dprime, D, B, evalHist, noisy_size, evals)
+    Dprime = ReOrthogonalize(dprime, D);
+    Bprime = Dprime(:, end-noisy_size+1:end);
+    evalHistPrime = ReOrganize(evalHist, evals);
+    D = Dprime;
+    B = Bprime;
+    evalHist = evalHistPrime;
+end
+
+function Dprime = ReOrthogonalize(dprime, D)
+
+    %Some error checks that copilot suggested
+    if ~isnumeric(D) || isempty(D)
+        error('D must be a nonempty numeric matrix.');
+    end
+    if ~isnumeric(dprime) || size(dprime, 2) ~= 1 || ...
+            size(dprime, 1) ~= size(D, 1)
+        error('dprime must be a numeric column vector with the same row count as D.');
+    end
+    if any(~isfinite(D(:))) || any(~isfinite(dprime(:)))
+        error('D and dprime must contain only finite values.');
+    end
+    if ~isfinite(norm(dprime)) || norm(dprime) == 0
+        error('dprime must have a finite, nonzero norm.');
+    end
+    
+    %Initialize Dprime to be empty except for dprime as the last column.
+    n = size(D, 2);
+    Dprime = zeros(size(D), 'like', D);
+    Dprime(:, end) = dprime / norm(dprime);
+
+    % Go from n-1 down to 1 (so skip the last d that we added) and find the orthogonalized version of each column of D.
+    for k = n-1:-1:1
+        %extract d
+        d = D(:, k);
+
+        %Remove the components of d that are in the direction of thecolumns already in Dprime (from k+1 to n)
+        for i = k+1:1:n
+            d = d - (Dprime(:, i)' * d) * Dprime(:, i);
+        end
+
+        %Check that the resulting vector is finite.
+        if ~isfinite(norm(d))
+            error('Orthogonalization produced a non-finite residual.');
+        end
+
+        %Add in the new normalized direction.
+        Dprime(:, k) = d / norm(d);
+    end
+end
+
+function evalHistPrime = ReOrganize(evalHist, evals)
+    %The new evalHist should be exactly evalHist except we remove the last evals that correspond to di and replace with the new evals that correspond to di prime.
+    evalHistPrime = evalHist;
+    evalHistPrime{end} = evals; % Rewrite the last entry with the new evaluations
 end
 
 %% Help function given by Jörgen.
