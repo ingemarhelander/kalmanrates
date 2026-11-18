@@ -88,6 +88,7 @@ if ~isempty(dataSel.test)
         x, varInd, dataSel.train, dataSel.test);
     print_out_of_sample(history.outOfSample);
 end
+save_result(x, varInd, data, dataSel, periods, history);
 
 %% ------------------------------ Functions -------------------------------
 
@@ -395,6 +396,24 @@ function print_out_of_sample(r)
         r.logLik, r.nDays, r.perDay, r.perObs);
     fprintf('  Training: log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
         r.trainLogLik, r.trainDays, r.trainPerDay, r.trainPerObs);
+end
+
+function save_result(x, varInd, data, dataSel, periods, history)
+% Saves the run in data/kalmanOptimizeResult.mat for plotOutOfSample.
+% xStart and xOpt are whole parameter vectors (as storeParamVec takes them).
+
+    K = data.K;
+    result.xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    result.xOpt = result.xStart;
+    result.xOpt(varInd) = x;
+    result.varInd = varInd;
+    result.keepInstr = data.keepInstr;
+    result.dataSel = dataSel;
+    result.modelFile = periods.modelFile;
+    result.history = history;
+    result.savedAt = datestr(now, 'yyyy-mm-dd HH:MM');
+    save(dataPath('kalmanOptimizeResult.mat'), '-struct', 'result');
+    fprintf('Saved the result in %s\n', dataPath('kalmanOptimizeResult.mat'));
 end
 
 function [x, f, g] = update_step(xNew, fNew, gNew)
