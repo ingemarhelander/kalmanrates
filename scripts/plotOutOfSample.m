@@ -1,6 +1,6 @@
 % plotOutOfSample.m
-% Visualizes the out-of-sample test: runs the Kalman filter from the first
-% training day to the last test day and plots, per day, how well the
+% Visualizes the out-of-sample evaluation: runs the Kalman filter from the
+% first optimization day to the last out-of-sample day and plots, per day, how well the
 % one-step-ahead prediction fits the market (start parameters vs the
 % optimized parameters).
 %
@@ -16,8 +16,8 @@ smoothDays = 10;                         % Rolling mean in the first two rows
 
 config = readConfig(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
 periods = experimentPeriods(config);
-if isempty(periods.testStart)
-  error('kalmanrates:NoTest', 'Set test_start in kalmanOptimizeMain.config to plot the out-of-sample test.');
+if isempty(periods.outOfSampleStart)
+  error('kalmanrates:NoOutOfSample', 'Set out_of_sample_start in kalmanOptimizeMain.config to plot the out-of-sample evaluation.');
 end
 [K, times, ricAll] = loadKalmanModel(periods.modelFile);
 
@@ -25,7 +25,11 @@ end
 resultFile = dataPath('kalmanOptimizeResult.mat');
 if isfile(resultFile)
   R = load(resultFile);
-  if ~strcmp(R.modelFile, periods.modelFile)
+  if ~isfield(R, 'periods') || ~isfield(R.periods, 'optimizeStart')
+    warning('kalmanrates:StaleResult', ...
+            '%s is from an older version. Run kalmanOptimizeMain again. Plotting the start parameters only.', resultFile);
+    R = [];
+  elseif ~strcmp(R.modelFile, periods.modelFile)
     warning('kalmanrates:StaleResult', ...
             '%s is from model %s, not %s. Plotting the start parameters only.', ...
             resultFile, R.modelFile, periods.modelFile);
@@ -45,20 +49,20 @@ else
   fprintf('Using %s from %s\n', resultFile, R.savedAt);
 end
 
-% Same days as evaluateOutOfSample: first training day to last test day.
-trainIdx = selectDays(times, periods.trainStart, periods.trainEnd);
-testIdx = selectDays(times, periods.testStart, periods.testEnd);
-idx = trainIdx(1):testIdx(end);
+% Same days as evaluateOutOfSample: first optimization day to last out-of-sample day.
+optimizeIdx = selectDays(times, periods.optimizeStart, periods.optimizeEnd);
+outOfSampleIdx = selectDays(times, periods.outOfSampleStart, periods.outOfSampleEnd);
+idx = optimizeIdx(1):outOfSampleIdx(end);
 KS = subsetKalmanModel(K, idx);
 days = floor(times(idx));
-isTrain = ismember(idx, trainIdx);
-isTest = ismember(idx, testIdx);
-testStartDay = days(find(isTest, 1));
+isOptimize = ismember(idx, optimizeIdx);
+isOutOfSample = ismember(idx, outOfSampleIdx);
+outOfSampleStartDay = days(find(isOutOfSample, 1));
 
 % Filter each parameter set.
 nSets = size(paramSets, 1);
 res = cell(nSets, 1);
-fprintf('\n%-40s %14s %14s\n', '', 'Träning', 'Test');
+fprintf('\n%-40s %14s %14s\n', '', 'Optimering', 'Out-of-sample');
 for s = 1:nSets
   res{s} = filterDays(KS, paramSets{s,1});
   fMex = kalmanObj(paramSets{s,1}, KS, 0);
@@ -67,25 +71,25 @@ for s = 1:nSets
             'The MATLAB filter (%.4f) and mexKalmanLogLikelihood (%.4f) differ.', sum(res{s}.f), fMex);
   end
   perObs = @(m) sum(res{s}.f(m)) / sum(res{s}.nz(m));
-  fprintf('%-40s %14.4f %14.4f   log likelihood per observation\n', paramSets{s,2}, perObs(isTrain), perObs(isTest));
+  fprintf('%-40s %14.4f %14.4f   log likelihood per observation\n', paramSets{s,2}, perObs(isOptimize), perObs(isOutOfSample));
   fprintf('%-40s %14.3g %14.3g   medel av standardiserat fel^2 (1 = som modellen väntar sig)\n', '', ...
-          mean(res{s}.d2(isTrain)), mean(res{s}.d2(isTest)));
+          mean(res{s}.d2(isOptimize)), mean(res{s}.d2(isOutOfSample)));
 end
 
 %% Figure
 colors = [0.45 0.45 0.45 ; 0 0.4470 0.7410];
 fig = figure('Name', 'Out-of-sample', 'Position', [50 50 1200 900]);
 tl = tiledlayout(fig, 3, 1, 'TileSpacing', 'compact');
-title(tl, sprintf('Träning %s till %s, test %s till %s', ...
-      datestr(days(find(isTrain, 1)), 'yyyy-mm-dd'), datestr(days(find(isTrain, 1, 'last')), 'yyyy-mm-dd'), ...
-      datestr(testStartDay, 'yyyy-mm-dd'), datestr(max(days(isTest)), 'yyyy-mm-dd')));
+title(tl, sprintf('Optimering %s till %s, out-of-sample %s till %s', ...
+      datestr(days(find(isOptimize, 1)), 'yyyy-mm-dd'), datestr(days(find(isOptimize, 1, 'last')), 'yyyy-mm-dd'), ...
+      datestr(outOfSampleStartDay, 'yyyy-mm-dd'), datestr(max(days(isOutOfSample)), 'yyyy-mm-dd')));
 
 ax1 = nexttile(tl); hold(ax1, 'on');
 for s = 1:nSets
   plot(ax1, days, movmean(res{s}.f ./ res{s}.nz, smoothDays), 'Color', colors(s,:), 'LineWidth', 1.2, ...
        'DisplayName', paramSets{s,2});
 end
-markTest(ax1, testStartDay, days(end));
+markOutOfSample(ax1, outOfSampleStartDay, days(end));
 ylabel(ax1, 'log likelihood / observation');
 title(ax1, sprintf('Log likelihood per observation och dag (%d dagars glidande medel), högre är bättre', smoothDays));
 legend(ax1, 'Location', 'best');
@@ -97,7 +101,7 @@ for s = 1:nSets
 end
 yline(ax2, 1, 'k:', 'HandleVisibility', 'off');
 set(ax2, 'YScale', 'log');
-markTest(ax2, testStartDay, days(end));
+markOutOfSample(ax2, outOfSampleStartDay, days(end));
 ylabel(ax2, '\epsilon^T S^{-1} \epsilon / n_z');
 title(ax2, 'Standardiserat prediktionsfel i kvadrat (1 = lika stort som modellen väntar sig)');
 
@@ -112,7 +116,7 @@ for i = 1:numel(plotTenors)
   plot(ax3, days, 100*best.z(:,j), '.', 'Color', lineColors(i,:), 'MarkerSize', 6, 'HandleVisibility', 'off');
   plot(ax3, days, 100*best.pred(:,j), '-', 'Color', lineColors(i,:), 'DisplayName', plotTenors{i});
 end
-markTest(ax3, testStartDay, days(end));
+markOutOfSample(ax3, outOfSampleStartDay, days(end));
 ylabel(ax3, 'ränta (%)');
 title(ax3, sprintf('Marknad (punkter) och prognos en dag framåt (linjer), %s', paramSets{end,2}));
 legend(ax3, 'Location', 'best');
@@ -194,11 +198,11 @@ function o = oCompute(KS, t, EfInt)
   end
 end
 
-function markTest(ax, testStart, lastDay)
+function markOutOfSample(ax, outOfSampleStart, lastDay)
   yl = ylim(ax);
-  p = patch(ax, [testStart lastDay lastDay testStart], [yl(1) yl(1) yl(2) yl(2)], [1 0.85 0.6], ...
+  p = patch(ax, [outOfSampleStart lastDay lastDay outOfSampleStart], [yl(1) yl(1) yl(2) yl(2)], [1 0.85 0.6], ...
             'FaceAlpha', 0.35, 'EdgeColor', 'none', 'HandleVisibility', 'off');
   uistack(p, 'bottom'); % Lines on top of the shading
-  xline(ax, testStart, 'r-', 'test', 'HandleVisibility', 'off', 'LabelVerticalAlignment', 'bottom');
+  xline(ax, outOfSampleStart, 'r-', 'out-of-sample', 'HandleVisibility', 'off', 'LabelVerticalAlignment', 'bottom');
   ylim(ax, yl);
 end

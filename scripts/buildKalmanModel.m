@@ -1,12 +1,14 @@
 % buildKalmanModel.m
 % Builds the Kalman model for the periods in kalmanOptimizeMain.config so
-% that the out-of-sample test is out of sample also for the model itself:
-% PCA (Ef, ef) and start parameters use only the in-sample days, while the
-% model holds every day from insample_start to test_end (or the last day of
-% the data) so that kalmanOptimizeMain can filter through the test period.
+% that the out-of-sample evaluation is out of sample also for the model
+% itself: PCA (Ef, ef) and start parameters use only the in-sample days,
+% while the model holds every day from insample_start to out_of_sample_end
+% (or the last day of the data) so that kalmanOptimizeMain can filter
+% through the out-of-sample period.
 %
-% Saves K and KI in data/kalmanModel_<insample_start>_<insample_end>_<test_end or end>.mat.
-% Run it once per in-sample/test choice, then run kalmanOptimizeMain.
+% Saves K and KI in data/kalmanModel_<insample_start>_<insample_end>_<out_of_sample_end or end>.mat.
+% Run it once per choice of in-sample and out_of_sample_end, then run
+% kalmanOptimizeMain.
 
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 

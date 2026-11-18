@@ -74,7 +74,8 @@ end
 
 eligibleIndices = find(keepDates);
 % buildKalmanModel sets buildPeriods. With in-sample set, the days from
-% insample_start to test_end are kept and the PCA uses only in-sample days.
+% insample_start to out_of_sample_end are kept and the PCA uses only
+% in-sample days.
 useInsample = exist('buildPeriods', 'var') && buildPeriods.hasInsample;
 if useInsample
   if flgTick

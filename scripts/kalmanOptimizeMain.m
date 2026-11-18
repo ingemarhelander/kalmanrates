@@ -16,7 +16,7 @@ maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
 lineSearchFcn = select_line_search(config); % Line search method and its options
-periods = experimentPeriods(config); % In-sample, training and test periods
+periods = experimentPeriods(config); % In-sample, optimization and out-of-sample periods
 
 [K, varInd, xLbd, x, data] = setup_problem(periods);
 [f, g] = kalmanObj(x, K, mu, varInd);
@@ -83,8 +83,8 @@ while true
     end
 end
 
-%% Out-of-sample test with the optimized parameters
-if ~isempty(periods.testStart)
+%% Out-of-sample evaluation with the optimized parameters
+if ~isempty(periods.outOfSampleStart)
     history.outOfSample = evaluateOutOfSample(data.K, data.times, x, varInd, periods);
     print_out_of_sample(history.outOfSample);
 end
@@ -227,7 +227,8 @@ end
 function [K, varInd, xLbd, x, data] = setup_problem(periods)
 % Loads the model for the periods, sets the starting point, selects which
 % variables to optimize and builds the lower bounds for them. K holds the
-% training days; data holds the whole model for the out-of-sample test.
+% optimization days; data holds the whole model for the out-of-sample
+% evaluation.
 
     [K, times, ricAll, KI] = loadKalmanModel(periods.modelFile);
     check_model_periods(KI, periods);
@@ -256,7 +257,7 @@ function [K, varInd, xLbd, x, data] = setup_problem(periods)
             if periods.hasInsample
                 warning('kalmanrates:NotOutOfSample', ...
                         ['start_point saved: kalmanXoptAll.mat was not fitted on the ' ...
-                         'in-sample days only, so the test may not be out of sample.']);
+                         'in-sample days only, so the evaluation may not be out of sample.']);
             end
             K.thetaF = xOpt(thetaFInd);
             K.Sigmaw = xOpt(SigmawInd);
@@ -281,17 +282,17 @@ function [K, varInd, xLbd, x, data] = setup_problem(periods)
         case 9, varInd = [thetaFInd SigmavInd SigmawInd axInd Sigma0Ind];
     end
 
-    % Contracts without quotes on the training days do not affect the
+    % Contracts without quotes on the optimization days do not affect the
     % likelihood, so their parameters are not optimized (the mu penalty
     % alone would otherwise push them up without bound).
-    trainIdx = selectDays(times, periods.trainStart, periods.trainEnd);
+    optimizeIdx = selectDays(times, periods.optimizeStart, periods.optimizeEnd);
     quoted = false(1, K.nu);
-    for t = trainIdx
+    for t = optimizeIdx
         quoted = quoted | full(any(K.Iz{t}, 1));
     end
     if ~all(quoted)
         unquoted = find(~quoted);
-        fprintf('Contracts without quotes on the training days are not optimized: %s\n', ...
+        fprintf('Contracts without quotes on the optimization days are not optimized: %s\n', ...
                 strjoin(ricAll(unquoted), ', '));
         state = K.ns + unquoted;
         varInd = setdiff(varInd, [thetaFInd(state) SigmavInd(unquoted) SigmawInd(state) ...
@@ -306,11 +307,12 @@ function [K, varInd, xLbd, x, data] = setup_problem(periods)
     x    = xInitAll(varInd);
     xLbd = xLbdAll(varInd);
 
-    % Keep the whole model (now holding the start parameters) for the test
+    % Keep the whole model (now holding the start parameters) for the
+    % out-of-sample evaluation
     data = struct('K', K, 'times', times);
-    K = subsetKalmanModel(K, trainIdx);
-    fprintf('Training data: %d days, %s to %s\n', numel(trainIdx), ...
-            datestr(floor(times(trainIdx(1))), 'yyyy-mm-dd'), datestr(floor(times(trainIdx(end))), 'yyyy-mm-dd'));
+    K = subsetKalmanModel(K, optimizeIdx);
+    fprintf('Optimization data: %d days, %s to %s\n', numel(optimizeIdx), ...
+            datestr(floor(times(optimizeIdx(1))), 'yyyy-mm-dd'), datestr(floor(times(optimizeIdx(end))), 'yyyy-mm-dd'));
 end
 
 function check_model_periods(KI, periods)
@@ -329,10 +331,10 @@ function check_model_periods(KI, periods)
               datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'), ...
               datestr(periods.insampleStart, 'yyyy-mm-dd'), datestr(periods.insampleEnd, 'yyyy-mm-dd'));
     end
-    if ~isempty(periods.testStart) && KI.pcaCutoff > periods.testStart
+    if ~isempty(periods.outOfSampleStart) && KI.pcaCutoff > periods.outOfSampleStart
         error('kalmanrates:InvalidPeriods', ...
-              'The PCA of the model uses days up to %s, after test_start %s.', ...
-              datestr(KI.pcaCutoff - 1, 'yyyy-mm-dd'), datestr(periods.testStart, 'yyyy-mm-dd'));
+              'The PCA of the model uses days up to %s, after out_of_sample_start %s.', ...
+              datestr(KI.pcaCutoff - 1, 'yyyy-mm-dd'), datestr(periods.outOfSampleStart, 'yyyy-mm-dd'));
     end
     fprintf('Model %s: in-sample %s to %s\n', periods.modelFile, ...
             datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'));
@@ -340,11 +342,11 @@ end
 
 function print_out_of_sample(r)
     fprintf('\nOut-of-sample %s to %s (given all earlier days):\n', ...
-        datestr(r.testStart, 'yyyy-mm-dd'), datestr(r.testEnd, 'yyyy-mm-dd'));
-    fprintf('  Test:     log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        datestr(r.outOfSampleStart, 'yyyy-mm-dd'), datestr(r.outOfSampleEnd, 'yyyy-mm-dd'));
+    fprintf('  Out-of-sample: log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
         r.logLik, r.nDays, r.perDay, r.perObs);
-    fprintf('  Training: log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
-        r.trainLogLik, r.trainDays, r.trainPerDay, r.trainPerObs);
+    fprintf('  Optimization:  log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.optimizeLogLik, r.optimizeDays, r.optimizePerDay, r.optimizePerObs);
 end
 
 function save_result(x, varInd, K, periods, history)

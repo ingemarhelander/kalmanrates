@@ -1,42 +1,51 @@
 function periods = experimentPeriods(config)
-% experimentPeriods - In-sample, training and test periods of an experiment.
+% experimentPeriods - In-sample, optimization and out-of-sample periods of an experiment.
 %
 %   periods = experimentPeriods(config)
 %
 %   config  struct from readConfig (kalmanOptimizeMain.config). Dates are
 %           written yyyy-mm-dd and both end points are included. Keys:
-%             insample_start, insample_end  days the model is built on (PCA
-%                         and start parameters). Give both or neither.
-%             train_start, train_end  days the parameters are optimized on.
-%                         Must lie within in-sample; default whole in-sample.
-%             test_start, test_end  out-of-sample period. test_start must be
-%                         after insample_end. Without test_start there is no
-%                         test; without test_end the last day of the data.
+%             insample_start, insample_end  days the model is built on
+%                         (PCA and start parameters). Give both or neither.
+%             optimize_start, optimize_end  days the parameters are
+%                         optimized on. Must lie within in-sample; default
+%                         whole in-sample.
+%             out_of_sample_start, out_of_sample_end  out-of-sample period.
+%                         out_of_sample_start must be after insample_end.
+%                         Without out_of_sample_start there is no
+%                         out-of-sample evaluation; without
+%                         out_of_sample_end the last day of the data is used.
 %             start_point init (the model's own start parameters) or saved
 %                         (kalmanXoptAll.mat). Default init when in-sample
 %                         is set, otherwise saved.
 %
 %   periods struct with the fields
 %             hasInsample   true when insample_start/insample_end are set
-%             insampleStart, insampleEnd, trainStart, trainEnd,
-%             testStart, testEnd   datenums, [] when not given
-%             buildEnd      last day the model is built for: testEnd, or
-%                           Inf (the last day of the data)
+%             insampleStart, insampleEnd, optimizeStart, optimizeEnd,
+%             outOfSampleStart, outOfSampleEnd   datenums, [] when not given
+%             buildEnd      last day the model is built for:
+%                           outOfSampleEnd, or Inf (the last day of the data)
 %             startPoint    'init' or 'saved'
-%             modelFile     kalmanModel_<insample_start>_<insample_end>_<test_end or end>.mat,
+%             modelFile     kalmanModel_<insample_start>_<insample_end>_<out_of_sample_end or end>.mat,
 %                           or '' (the old kalmanDebug.mat) without in-sample
 %
 %   A broken rule gives the error kalmanrates:InvalidPeriods. Without
-%   in-sample the old saved model is used and, when there is a test period,
-%   the warning kalmanrates:NotOutOfSample is given.
+%   in-sample the old saved model is used and, when there is an
+%   out-of-sample period, the warning kalmanrates:NotOutOfSample is given.
+
+oldKeys = intersect(fieldnames(config), {'train_start', 'train_end', 'test_start', 'test_end'});
+if ~isempty(oldKeys)
+  fail(['%s: the keys are now called optimize_start/optimize_end and ' ...
+        'out_of_sample_start/out_of_sample_end.'], strjoin(oldKeys, ', '));
+end
 
 periods = struct();
-periods.insampleStart = readDate(config, 'insample_start');
-periods.insampleEnd   = readDate(config, 'insample_end');
-periods.trainStart    = readDate(config, 'train_start');
-periods.trainEnd      = readDate(config, 'train_end');
-periods.testStart     = readDate(config, 'test_start');
-periods.testEnd       = readDate(config, 'test_end');
+periods.insampleStart    = readDate(config, 'insample_start');
+periods.insampleEnd      = readDate(config, 'insample_end');
+periods.optimizeStart    = readDate(config, 'optimize_start');
+periods.optimizeEnd      = readDate(config, 'optimize_end');
+periods.outOfSampleStart = readDate(config, 'out_of_sample_start');
+periods.outOfSampleEnd   = readDate(config, 'out_of_sample_end');
 
 if isempty(periods.insampleStart) ~= isempty(periods.insampleEnd)
   fail('insample_start and insample_end must be given together.');
@@ -44,36 +53,36 @@ end
 periods.hasInsample = ~isempty(periods.insampleStart);
 
 checkOrder(periods.insampleStart, periods.insampleEnd, 'insample');
-if ~isempty(periods.testEnd) && isempty(periods.testStart)
-  fail('test_end is given without test_start.');
+if ~isempty(periods.outOfSampleEnd) && isempty(periods.outOfSampleStart)
+  fail('out_of_sample_end is given without out_of_sample_start.');
 end
-checkOrder(periods.testStart, periods.testEnd, 'test');
+checkOrder(periods.outOfSampleStart, periods.outOfSampleEnd, 'out_of_sample');
 
 if periods.hasInsample
-  if isempty(periods.trainStart)
-    periods.trainStart = periods.insampleStart;
+  if isempty(periods.optimizeStart)
+    periods.optimizeStart = periods.insampleStart;
   end
-  if isempty(periods.trainEnd)
-    periods.trainEnd = periods.insampleEnd;
+  if isempty(periods.optimizeEnd)
+    periods.optimizeEnd = periods.insampleEnd;
   end
-  if periods.trainStart < periods.insampleStart || periods.trainEnd > periods.insampleEnd
-    fail('The training period %s to %s must lie within in-sample %s to %s.', ...
-         ymd(periods.trainStart), ymd(periods.trainEnd), ...
+  if periods.optimizeStart < periods.insampleStart || periods.optimizeEnd > periods.insampleEnd
+    fail('The optimization period %s to %s must lie within in-sample %s to %s.', ...
+         ymd(periods.optimizeStart), ymd(periods.optimizeEnd), ...
          ymd(periods.insampleStart), ymd(periods.insampleEnd));
   end
-  if ~isempty(periods.testStart) && periods.testStart <= periods.insampleEnd
-    fail('test_start %s must be after insample_end %s.', ...
-         ymd(periods.testStart), ymd(periods.insampleEnd));
+  if ~isempty(periods.outOfSampleStart) && periods.outOfSampleStart <= periods.insampleEnd
+    fail('out_of_sample_start %s must be after insample_end %s.', ...
+         ymd(periods.outOfSampleStart), ymd(periods.insampleEnd));
   end
 end
-checkOrder(periods.trainStart, periods.trainEnd, 'train');
+checkOrder(periods.optimizeStart, periods.optimizeEnd, 'optimize');
 
-if isempty(periods.testEnd)
+if isempty(periods.outOfSampleEnd)
   periods.buildEnd = Inf;
   endName = 'end';
 else
-  periods.buildEnd = periods.testEnd;
-  endName = ymd(periods.testEnd);
+  periods.buildEnd = periods.outOfSampleEnd;
+  endName = ymd(periods.outOfSampleEnd);
 end
 
 if periods.hasInsample
@@ -83,11 +92,11 @@ if periods.hasInsample
 else
   periods.modelFile = '';
   defaultStart = 'saved';
-  if ~isempty(periods.testStart)
+  if ~isempty(periods.outOfSampleStart)
     warning('kalmanrates:NotOutOfSample', ...
             ['insample_start/insample_end are not set, so the old model (kalmanDebug.mat) ' ...
-             'is used. Its PCA and start parameters may be built on the test days, so ' ...
-             'the test is not guaranteed to be out of sample.']);
+             'is used. Its PCA and start parameters may be built on the out-of-sample ' ...
+             'days, so the evaluation is not guaranteed to be out of sample.']);
   end
 end
 

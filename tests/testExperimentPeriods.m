@@ -11,55 +11,57 @@ end
 
 function testInsampleDefaults(testCase)
 p = experimentPeriods(cfg('insample_start', '2016-01-01', 'insample_end', '2018-12-31', ...
-                          'test_start', '2019-01-01', 'test_end', '2019-03-31'));
+                          'out_of_sample_start', '2019-01-01', 'out_of_sample_end', '2019-03-31'));
 verifyTrue(testCase, p.hasInsample);
-verifyEqual(testCase, p.trainStart, datenum(2016,1,1));
-verifyEqual(testCase, p.trainEnd, datenum(2018,12,31));
-verifyEqual(testCase, p.testStart, datenum(2019,1,1));
+verifyEqual(testCase, p.optimizeStart, datenum(2016,1,1));
+verifyEqual(testCase, p.optimizeEnd, datenum(2018,12,31));
+verifyEqual(testCase, p.outOfSampleStart, datenum(2019,1,1));
 verifyEqual(testCase, p.buildEnd, datenum(2019,3,31));
 verifyEqual(testCase, p.startPoint, 'init');
 verifyEqual(testCase, p.modelFile, 'kalmanModel_2016-01-01_2018-12-31_2019-03-31.mat');
 end
 
-function testNoTestEndUsesEnd(testCase)
+function testNoOutOfSampleEndUsesEnd(testCase)
 p = experimentPeriods(cfg('insample_start', '2016-01-01', 'insample_end', '2018-12-31', ...
-                          'test_start', '2019-01-01'));
-verifyEmpty(testCase, p.testEnd);
+                          'out_of_sample_start', '2019-01-01'));
+verifyEmpty(testCase, p.outOfSampleEnd);
 verifyEqual(testCase, p.buildEnd, Inf);
 verifyEqual(testCase, p.modelFile, 'kalmanModel_2016-01-01_2018-12-31_end.mat');
 p = experimentPeriods(cfg('insample_start', '2016-01-01', 'insample_end', '2018-12-31'));
-verifyEmpty(testCase, p.testStart);
+verifyEmpty(testCase, p.outOfSampleStart);
 verifyEqual(testCase, p.modelFile, 'kalmanModel_2016-01-01_2018-12-31_end.mat');
 end
 
-function testTrainWithinInsample(testCase)
+function testOptimizeWithinInsample(testCase)
 p = experimentPeriods(cfg('insample_start', '2016-01-01', 'insample_end', '2018-12-31', ...
-                          'train_start', '2018-01-01', 'test_start', '2019-01-01', ...
+                          'optimize_start', '2018-01-01', 'out_of_sample_start', '2019-01-01', ...
                           'start_point', 'saved'));
-verifyEqual(testCase, p.trainStart, datenum(2018,1,1));
-verifyEqual(testCase, p.trainEnd, datenum(2018,12,31));
+verifyEqual(testCase, p.optimizeStart, datenum(2018,1,1));
+verifyEqual(testCase, p.optimizeEnd, datenum(2018,12,31));
 verifyEqual(testCase, p.startPoint, 'saved');
 % The whole in-sample, end points included, is allowed.
 p = experimentPeriods(cfg('insample_start', '2016-01-01', 'insample_end', '2018-12-31', ...
-                          'train_start', '2016-01-01', 'train_end', '2018-12-31'));
-verifyEqual(testCase, [p.trainStart p.trainEnd], datenum([2016 2018], [1 12], [1 31]));
+                          'optimize_start', '2016-01-01', 'optimize_end', '2018-12-31'));
+verifyEqual(testCase, [p.optimizeStart p.optimizeEnd], datenum([2016 2018], [1 12], [1 31]));
 end
 
 function testWithoutInsampleWorksAsBefore(testCase)
-p = verifyWarning(testCase, @() experimentPeriods(cfg('train_start', '2018-01-01', ...
-        'train_end', '2018-12-31', 'test_start', '2019-01-01')), 'kalmanrates:NotOutOfSample');
+p = verifyWarning(testCase, @() experimentPeriods(cfg('optimize_start', '2018-01-01', ...
+        'optimize_end', '2018-12-31', 'out_of_sample_start', '2019-01-01')), 'kalmanrates:NotOutOfSample');
 verifyFalse(testCase, p.hasInsample);
 verifyEqual(testCase, p.modelFile, '');
 verifyEqual(testCase, p.startPoint, 'saved');
-verifyEqual(testCase, p.trainStart, datenum(2018,1,1));
-% Without a test there is nothing to warn about, and missing dates stay empty.
+verifyEqual(testCase, p.optimizeStart, datenum(2018,1,1));
+% Without an out-of-sample period there is nothing to warn about, and
+% missing dates stay empty.
 p = verifyWarningFree(testCase, @() experimentPeriods(struct()));
-verifyEmpty(testCase, p.trainStart);
-verifyEmpty(testCase, p.trainEnd);
-verifyEmpty(testCase, p.testStart);
-% Without in-sample the test may overlap the training (evaluateOutOfSample warns).
-verifyWarning(testCase, @() experimentPeriods(cfg('train_start', '2018-01-01', ...
-        'test_start', '2017-01-01')), 'kalmanrates:NotOutOfSample');
+verifyEmpty(testCase, p.optimizeStart);
+verifyEmpty(testCase, p.optimizeEnd);
+verifyEmpty(testCase, p.outOfSampleStart);
+% Without in-sample the out-of-sample period may overlap the optimization
+% period (evaluateOutOfSample then stops with an error).
+verifyWarning(testCase, @() experimentPeriods(cfg('optimize_start', '2018-01-01', ...
+        'out_of_sample_start', '2017-01-01')), 'kalmanrates:NotOutOfSample');
 end
 
 %% Broken rules
@@ -70,18 +72,20 @@ bad = {
     {'insample_start', '2016-01-01'}                          % end missing
     {'insample_end', '2018-12-31'}                            % start missing
     {'insample_start', '2018-01-01', 'insample_end', '2017-12-31'}
-    [ins, {'train_start', '2015-12-31'}]                      % before in-sample
-    [ins, {'train_end', '2019-01-01'}]                        % after in-sample
-    [ins, {'train_start', '2018-06-01', 'train_end', '2018-01-01'}]
-    [ins, {'test_start', '2018-12-31'}]                       % test in in-sample
-    [ins, {'test_start', '2018-06-01'}]
-    [ins, {'test_start', '2019-02-01', 'test_end', '2019-01-31'}]
-    [ins, {'test_end', '2019-03-31'}]                         % no test_start
+    [ins, {'optimize_start', '2015-12-31'}]                   % before in-sample
+    [ins, {'optimize_end', '2019-01-01'}]                     % after in-sample
+    [ins, {'optimize_start', '2018-06-01', 'optimize_end', '2018-01-01'}]
+    [ins, {'out_of_sample_start', '2018-12-31'}]              % out-of-sample in in-sample
+    [ins, {'out_of_sample_start', '2018-06-01'}]
+    [ins, {'out_of_sample_start', '2019-02-01', 'out_of_sample_end', '2019-01-31'}]
+    [ins, {'out_of_sample_end', '2019-03-31'}]                % no out_of_sample_start
     [ins, {'start_point', 'xyz'}]
     [ins, {'insample_start', '2016/01/01'}]                   % date format
-    [ins, {'train_start', '2018-02-30'}]                      % no such day
-    [ins, {'train_end', 20181231}]                            % number, not date
-    {'train_start', '2018-06-01', 'train_end', '2018-01-01'}  % without in-sample
+    [ins, {'optimize_start', '2018-02-30'}]                   % no such day
+    [ins, {'optimize_end', 20181231}]                         % number, not date
+    {'optimize_start', '2018-06-01', 'optimize_end', '2018-01-01'}  % without in-sample
+    [ins, {'train_start', '2018-01-01'}]                      % old key names
+    [ins, {'test_start', '2019-01-01'}]
 };
 for i = 1:numel(bad)
   verifyError(testCase, @() experimentPeriods(cfg(bad{i}{:})), 'kalmanrates:InvalidPeriods', ...
