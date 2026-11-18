@@ -1,4 +1,4 @@
-function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config)
+function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights)
 % Placeholder: returns x, f, g unchanged.
     B = orth(B);  % Ensure B is orthonormal
     columnNorms = sqrt(sum(abs(B).^2, 1));
@@ -29,7 +29,8 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
         mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
-    [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, config.fixed_or_exact);
+    [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
+        X, F, G, B, config.fixed_or_exact, weights);
     if ~ok
         fprintf('[denoise] The sample points do not determine the quadratic model; skipping.\n');
         d_prime = zeros(size(x));
@@ -60,7 +61,7 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
 end
 
 
-function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method)
+function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method, weights)
 % Project X and G onto the span of B to get a smaller problem.
     Z = B' * X;
     Gsmall = B' * G;
@@ -68,7 +69,8 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method)
         mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
     %Call the function that computes the quadratic approximation.
-    [Qsmall, qsmall, c, esmall, ok] = compute_quadratic_approximation(Z, F, Gsmall, method);
+    [Qsmall, qsmall, c, esmall, ok] = compute_quadratic_approximation( ...
+        Z, F, Gsmall, method, weights);
 
 
     fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
@@ -81,7 +83,7 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method)
 end
 
 
-function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method)
+function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method, weights)
 % COMPUTE_QUADRATIC_APPROXIMATION  Fit one quadratic model to noisy f and g.
 %
 %   Inputs
@@ -116,14 +118,14 @@ function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method)
     p = nVech + n + 1;
 
     % ------------------------------------------------------------------
-    % 0b. Weights (PLACEHOLDERS: the notes do not say how to choose them)
+    % 0b. Taylor-error weights are configured by the caller.
     % ------------------------------------------------------------------
     % w_xi(i)     : penalty on the Taylor error xi_i in the function value
     % wbar_xi(i)  : penalty on the Taylor error xibar_i in the gradient
     % w_e(i)      : penalty on the noise e_i in the function value
     % wbar_e(i)   : penalty on the noise ebar_i in the gradient
-    w_xi    = ones(1, m);
-    wbar_xi = ones(1, m);
+    w_xi    = ones(1, m) * weights.w_xi;
+    wbar_xi = ones(1, m) * weights.wbar_xi;
     w_e     = ones(1, m);
     wbar_e  = ones(1, m);
 
