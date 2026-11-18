@@ -95,14 +95,14 @@ function testReadConfigKeepsDatesAsText(testCase)
 file = [tempname '.config'];
 cleanup = onCleanup(@() delete(file));
 fid = fopen(file, 'w');
-fprintf(fid, '# comment\n%% comment\n\ninsample_start 2016-01-01\nmaxIter 100\nmu 1E-2\nflag true\ntenors 1M,3M\n');
+fprintf(fid, '# comment\n%% comment\n\ninsample_start 2016-01-01\nmaxIter 100\nmu 1E-2\nflag true\nlabel some text\n');
 fclose(fid);
 c = readConfig(file);
 verifyEqual(testCase, c.insample_start, '2016-01-01');
 verifyEqual(testCase, c.maxIter, 100);
 verifyEqual(testCase, c.mu, 1e-2);
 verifyEqual(testCase, c.flag, true);
-verifyEqual(testCase, c.tenors, '1M,3M');
+verifyEqual(testCase, c.label, 'some text');
 % insample_end is missing in this file.
 verifyError(testCase, @() experimentPeriods(c), 'kalmanrates:InvalidPeriods');
 end

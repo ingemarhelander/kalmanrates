@@ -47,9 +47,10 @@ kalmanOptimizeMain   % laddar samma fil, optimerar och testar
 ```
 
 `buildKalmanModel` behöver `EUR100.mat`, `EUR.mat` och MEX-filerna. Bygg om modellen när
-in-sample eller `test_end` ändras; träningsperioden, veckodagar och kontrakt kan ändras utan
-ombyggnad. `kalmanOptimizeMain` avbryter om modellens in-sample inte stämmer med configen eller om
-PCA:n använder dagar från testperioden. Kontrakt utan noteringar under träningsdagarna tas bort.
+in-sample eller `test_end` ändras; träningsperioden kan ändras utan ombyggnad.
+`kalmanOptimizeMain` avbryter om modellens in-sample inte stämmer med configen eller om
+PCA:n använder dagar från testperioden. Parametrar för kontrakt utan noteringar under
+träningsdagarna optimeras inte. Kör `plotOutOfSample` efteråt för en figur över träning och test.
 
 Saknas in-sample-raderna används `kalmanDebug.mat` som tidigare, med en varning om att testet inte
 är garanterat out-of-sample.
@@ -235,7 +236,7 @@ flowchart TD
 - `loadKalmanModel.m` – laddar en hel sparad modell (`kalmanDebug.mat` eller en given fil) med `KI`
 - `readConfig.m` – läser en config-fil med nyckel/värde-rader
 - `experimentPeriods.m` – läser och kontrollerar in-sample-, tränings- och testperioden, ger modellfilens namn
-- `selectDays.m`, `selectInstruments.m`, `subsetKalmanModel.m` – urval av dagar och kontrakt
+- `selectDays.m`, `subsetKalmanModel.m` – urval av dagar
 - `evaluateOutOfSample.m` – log-likelihood för testdagarna med optimerade parametrar
 - `limitKalmanObservations.m` – kortar modellens dagliga fält tillsammans
 - `selectObservations.m` – väljer dagar och resultatfilernas tillägg

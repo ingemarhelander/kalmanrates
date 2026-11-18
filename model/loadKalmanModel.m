@@ -9,8 +9,8 @@ function [K, times, ricAll, KI] = loadKalmanModel(fileName)
 %             when kalmanDebug.mat has no K.
 %
 %   Unlike loadKalmanSample, no observations are dropped here. Select days
-%   and contracts afterwards with selectDays, selectInstruments and
-%   subsetKalmanModel. KI is the saved metadata (times, ricAll and, for
+%   afterwards with selectDays and subsetKalmanModel. KI is the saved
+%   metadata (times, ricAll and, for
 %   models from buildKalmanModel, insampleStart, insampleEnd, pcaCutoff
 %   and buildEnd).
 

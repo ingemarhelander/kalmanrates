@@ -19,11 +19,10 @@ periods = experimentPeriods(config);
 if isempty(periods.testStart)
   error('kalmanrates:NoTest', 'Set test_start in kalmanOptimizeMain.config to plot the out-of-sample test.');
 end
-[K, times, ricAll, KI] = loadKalmanModel(periods.modelFile);
+[K, times, ricAll] = loadKalmanModel(periods.modelFile);
 
-% Parameters, days and contracts: from the saved run when it matches the config.
+% Parameters and periods: from the saved run when it matches the config.
 resultFile = dataPath('kalmanOptimizeResult.mat');
-paramSets = {};
 if isfile(resultFile)
   R = load(resultFile);
   if ~strcmp(R.modelFile, periods.modelFile)
@@ -39,30 +38,22 @@ end
 
 xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
 if isempty(R)
-  trainOpts = struct('startDate', periods.trainStart, 'endDate', periods.trainEnd, ...
-      'weekdays', cfgValue(config, 'weekdays', 'all'), 'dayStep', cfgValue(config, 'day_step', 1));
-  testOpts = struct('startDate', periods.testStart, 'endDate', periods.testEnd);
-  keepInstr = selectInstruments(ricAll, K.nu, cfgValue(config, 'tenors', 'all'));
   paramSets = {xStart, 'Startparametrar'};
 else
-  trainOpts = R.dataSel.train;
-  testOpts = R.dataSel.test;
-  keepInstr = R.keepInstr;
+  periods = R.periods;
   paramSets = {R.xStart, 'Startparametrar' ; R.xOpt, sprintf('Optimerade (%s)', R.savedAt)};
   fprintf('Using %s from %s\n', resultFile, R.savedAt);
 end
 
 % Same days as evaluateOutOfSample: first training day to last test day.
-trainIdx = selectDays(times, trainOpts);
-filters = trainOpts;
-filters.startDate = floor(times(trainIdx(1)));
-filters.endDate = testOpts.endDate;
-idx = selectDays(times, filters);
-KS = subsetKalmanModel(K, idx, keepInstr);
+trainIdx = selectDays(times, periods.trainStart, periods.trainEnd);
+testIdx = selectDays(times, periods.testStart, periods.testEnd);
+idx = trainIdx(1):testIdx(end);
+KS = subsetKalmanModel(K, idx);
 days = floor(times(idx));
 isTrain = ismember(idx, trainIdx);
-isTest = days >= testOpts.startDate & days <= testOpts.endDate;
-testStartDay = min(days(isTest));
+isTest = ismember(idx, testIdx);
+testStartDay = days(find(isTest, 1));
 
 % Filter each parameter set.
 nSets = size(paramSets, 1);
@@ -111,11 +102,10 @@ ylabel(ax2, '\epsilon^T S^{-1} \epsilon / n_z');
 title(ax2, 'Standardiserat prediktionsfel i kvadrat (1 = lika stort som modellen väntar sig)');
 
 ax3 = nexttile(tl); hold(ax3, 'on');
-[~, labels] = selectInstruments(ricAll, K.nu, 'all');
 best = res{end};
 lineColors = lines(numel(plotTenors));
 for i = 1:numel(plotTenors)
-  j = find(strcmp(labels, plotTenors{i}) & keepInstr, 1);
+  j = find(strcmp(ricAll(1:K.nu), ['EUREON' plotTenors{i} '=']), 1);
   if isempty(j)
     continue;
   end
@@ -211,11 +201,4 @@ function markTest(ax, testStart, lastDay)
   uistack(p, 'bottom'); % Lines on top of the shading
   xline(ax, testStart, 'r-', 'test', 'HandleVisibility', 'off', 'LabelVerticalAlignment', 'bottom');
   ylim(ax, yl);
-end
-
-function value = cfgValue(config, key, default)
-  value = default;
-  if isfield(config, key)
-    value = config.(key);
-  end
 end
