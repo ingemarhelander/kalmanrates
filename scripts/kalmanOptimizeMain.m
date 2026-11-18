@@ -15,9 +15,8 @@ weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
-lineSearchFcn = select_line_search(config); % Line search method and its options
-
 [K, varInd, xLbd, x] = setup_problem();
+lineSearchFcn = select_line_search(config, xLbd); % Line search method and its options
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];           % All orthogonal search directions 
@@ -97,10 +96,11 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
     end
 end
 
-function lineSearchFcn = select_line_search(config)
+function lineSearchFcn = select_line_search(config, xLbd)
 % Returns the line search chosen by config.lineSearch (default polynomial).
 % Keys beginning with ls_ are passed, without the prefix, as options to the
-% polynomial line search (see line_search_main).
+% polynomial line search (see line_search_main). The lower bounds xLbd are
+% passed too, so that no step goes past the first variance bound along d.
 
     method = 'polynomial';
     if isfield(config, 'lineSearch')
@@ -117,6 +117,7 @@ function lineSearchFcn = select_line_search(config)
 
     switch lower(method)
         case 'polynomial'
+            lsOpts.xLbd = xLbd;
             lineSearchFcn = @(x, f, g, d, K, mu, varInd) ...
                 line_search_main(x, f, g, d, K, mu, varInd, lsOpts);
         case 'backtracking'

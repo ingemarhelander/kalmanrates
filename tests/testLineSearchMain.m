@@ -210,6 +210,38 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyGreaterThan(fNew, f0);
         end
 
+        function lowerBoundCapsAlphaMax(testCase)
+            % x1 >= 0 vid x1 = 3 och d = [-1; 0]: gränsen ligger vid alpha = 3.
+            % F ökar fram till gränsen (log-barriär med svag vikt), så utan
+            % gräns skulle sökningen prova steg förbi den och få komplext F.
+            K = @(x) deal(-x(1) + 0.01*log(x(1)), [-1 + 0.01/x(1); 0]);
+            [f0, g0] = K([3; 0]);
+            [~, ~, fNew, ~, evals] = runQuiet([3; 0], f0, g0, [-1; 0], K, ...
+                                              struct('alphaMax', 20, 'alphaMin', 0.1, 'xLbd', [0; -Inf]));
+            testCase.verifyLessThanOrEqual(max(evals.A), 0.99*3 + 1e-12);
+            testCase.verifyGreaterThan(fNew, f0);
+            testCase.verifyFalse(contains(evals.reason, 'ogiltig'));
+        end
+
+        function noBoundNearKeepsAlphaMax(testCase)
+            % Ingen variabel minskar längs d: alphaMax förblir 20.
+            K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
+            [f0, g0] = K([1; 0]);
+            [~, ~, ~, ~, evals] = runQuiet([1; 0], f0, g0, [1; 0], K, ...
+                                           struct('alphaMax', 20, 'alphaMin', 0.1, 'xLbd', [0; -Inf]));
+            testCase.verifyEqual(evals.A(2), 20);
+        end
+
+        function variableAtBoundDoesNothing(testCase)
+            % x1 = 0 ligger på gränsen och d pekar nedåt: alphaMax = 0.
+            K = @(x) deal(-x(1), [-1; 1]);
+            [f0, g0] = K([0; 0]);
+            [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [-1; 1], K, ...
+                                               struct('alphaMax', 20, 'alphaMin', 0.1, 'xLbd', [0; -Inf]));
+            testCase.verifyEqual(alpha, 0);
+            testCase.verifyEqual(numel(evals.A), 1);
+        end
+
         function halvingStopsAtBoundary(testCase)
             % F ökar ända fram till gränsen alpha = 1 (log(1 - alpha) ger
             % komplext F bortom). Halveringen mot gränsen ska stoppa när
