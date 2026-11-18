@@ -24,23 +24,21 @@ classdef testLineSearchMain < matlab.unittest.TestCase
     end
 
     methods (Test)
-        function findsBetterPointWithAllMethods(testCase)
-            for method = {'lag1', 'lr', 'score', 'threshold'}
-                rng(1);
-                K = objective(0.05, 0.1);
-                [f0, g0] = K([0; 0]);
-                [alpha, xNew, fNew] = runQuiet([0; 0], f0, g0, [2; 0.5], K, method{1});
-                testCase.verifyGreaterThan(alpha, 0, method{1});
-                testCase.verifyGreaterThan(fNew, f0, method{1});
-                testCase.verifyEqual(xNew, [0; 0] + alpha*[2; 0.5], 'AbsTol', 1e-12, method{1});
-            end
+        function findsBetterPoint(testCase)
+            rng(1);
+            K = objective(0.05, 0.1);
+            [f0, g0] = K([0; 0]);
+            [alpha, xNew, fNew] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
+            testCase.verifyGreaterThan(alpha, 0);
+            testCase.verifyGreaterThan(fNew, f0);
+            testCase.verifyEqual(xNew, [0; 0] + alpha*[2; 0.5], 'AbsTol', 1e-12);
         end
 
         function firstPointIsLongestStep(testCase)
             rng(1);
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
-            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lr');
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
             testCase.verifyEqual(evals.A(2), 1);
         end
 
@@ -50,7 +48,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             rng(1);
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
-            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lr');
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
             n = numel(evals.A);
             testCase.verifyGreaterThan(n, 2);
             testCase.verifyEqual(evals.A(3:n), evals.AHat(2:n-1), 'AbsTol', 1e-12);
@@ -60,7 +58,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             rng(1);
             K = objective(1e-3, 1e-3);
             [f0, g0] = K([0; 0]);
-            [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lr');
+            [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
             testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.02);
             testCase.verifyTrue(contains(evals.reason, 'ligger nära'), evals.reason);
         end
@@ -68,13 +66,11 @@ classdef testLineSearchMain < matlab.unittest.TestCase
         function neverRepeatsAnAlpha(testCase)
             % Deterministisk målfunktion, som riktiga Kalman: samma alpha
             % ger samma värden. Ingen alpha får utvärderas två gånger.
-            for method = {'lr', 'score', 'threshold'}
-                K = deterministicObjective();
-                [f0, g0] = K([0; 0]);
-                [~, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, method{1});
-                testCase.verifyEqual(numel(unique(evals.A)), numel(evals.A), method{1});
-                testCase.verifyGreaterThan(fNew, f0, method{1});
-            end
+            K = deterministicObjective();
+            [f0, g0] = K([0; 0]);
+            [~, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
+            testCase.verifyEqual(numel(unique(evals.A)), numel(evals.A));
+            testCase.verifyGreaterThan(fNew, f0);
         end
 
         function steepStartShrinksUntilImprovement(testCase)
@@ -85,7 +81,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             K = @(x) deal(0.01*log(x(1) + 1e-17) - 10*x(1) - x(2)^2, ...
                           [0.01/(x(1) + 1e-17) - 10; -2*x(2)]);
             [f0, g0] = K([0; 0]);
-            [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, 'lr');
+            [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
             testCase.verifyEqual(evals.A(2:4), [1 0.1 0.01], 'AbsTol', 1e-15);
             testCase.verifyGreaterThan(alpha, 0);
             testCase.verifyGreaterThan(fNew, f0);
@@ -97,7 +93,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                 rng(seed);
                 K = objective(0.05, 0.1);
                 [f0, g0] = K([0; 0]);
-                [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lr');
+                [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
                 testCase.verifyTrue(alpha > 0 || contains(evals.reason, 'maxEvals'), evals.reason);
             end
         end
@@ -108,7 +104,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             rng(1);
             K = @(x) deal(x(1) + 1e-3*randn, [1; 0] + 1e-3*randn(2, 1));
             [f0, g0] = K([0; 0]);
-            [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, 'lr');
+            [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
             testCase.verifyEqual(alpha, 1);
             testCase.verifyEqual(numel(evals.A), 2);
         end
@@ -128,7 +124,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             rng(2);
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
-            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lag1');
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
             n = size(evals.X, 2);
             testCase.verifyEqual(numel(evals.F), n);
             testCase.verifyEqual(size(evals.G, 2), n);
@@ -150,7 +146,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             Kok = objective(0.05, 0.1);
             K = @(x) nanForLongSteps(Kok, x);
             [f0, g0] = K([0; 0]);
-            [alpha, ~, fNew, gNew, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lag1');
+            [alpha, ~, fNew, gNew, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
             testCase.verifyTrue(isfinite(fNew));
             testCase.verifyTrue(all(isfinite(gNew)));
             testCase.verifyLessThanOrEqual(alpha, 0.5);
@@ -161,7 +157,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             % Parametrar från den gamla linjesökningen ska inte ignoreras tyst.
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
-            testCase.verifyError(@() runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lr', struct('minPoints', 5)), ?MException);
+            testCase.verifyError(@() runQuiet([0; 0], f0, g0, [2; 0.5], K, struct('minPoints', 5)), ?MException);
         end
     end
 end
@@ -195,12 +191,11 @@ function [f, g] = nanForLongSteps(K, x)
     end
 end
 
-function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, method, opts)
-% line_search_main utan utskrifter. method blir opts.degreeMethod.
-    if nargin < 7
+function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, opts)
+% line_search_main utan utskrifter.
+    if nargin < 6
         opts = struct();
     end
-    opts.degreeMethod = method;
     alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
     evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts);');
 end

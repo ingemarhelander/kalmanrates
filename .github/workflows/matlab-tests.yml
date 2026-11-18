@@ -28,8 +28,7 @@ jobs:
             testFiles = {
               'tests/testDataLimit.m'
               'tests/testLineSearchMain.m'
-              'tests/testMlPolyMain.m'
-              'tests/testSelectPolyDegreeLr.m'
+              'tests/testSelectPolyDegree.m'
               'tests/test_denoise_quadratic_approximation.m'
             };
             results = runtests(testFiles);

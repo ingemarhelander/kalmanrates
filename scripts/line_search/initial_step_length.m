@@ -1,25 +1,15 @@
 function alpha = initial_step_length(g, d, alphaMax)
-% initial_step_length - Step length to the first new point of the line search.
+% initial_step_length - Första steget i backtracking (line_search.m).
 %
-% The line search starts with one evaluated point (alpha = 0). It needs one
-% more point along d before a polynomial can be fitted (Req. 22).
+% Väljer alpha så att tangenten f + alpha*(g'*d) förutsäger ökningen
+% deltaF: brant lutning ger kort steg, flack lutning långt steg.
+% Resultatet begränsas till [alphaMin, alphaMax]. Negativ lutning ger ett
+% negativt värde och lutning 0 ger Inf; gränserna tar hand om båda.
 
-% Choose alpha so that the tangent L(alpha) = f + alpha*(g'*d) predicts
-% the increase deltaF. A steep slope gives a short step, a flat slope a long step.
+    deltaF   = 1E2;   % förutsagd ökning i första punkten
+    alphaMin = 0.25;  % kortaste första steg
 
-% The result is limited to [alphaMin, 1]. Steps above 1 are not allowed since
-% find_search_direction only guarantees the lower bounds for alpha <= 1.
-
-    deltaF   = 1E2;   % Predicted increase in the objective value at the first new point of the line search
-    alphaMin = 0.25;  % Shortest allowed first step 
-
-    slope = g'*d;     % Directional derivative at the start point
-
-    % If slope < 0 the division gives a negative step, which alphaMin replaces.
-    % If slope = 0 the division gives Inf, which the upper limit 1 replaces.
-    
-    alpha = deltaF/slope;
-    
+    alpha = deltaF/(g'*d);
     alpha = min(alpha, alphaMax);
     alpha = max(alpha, alphaMin);
 end
