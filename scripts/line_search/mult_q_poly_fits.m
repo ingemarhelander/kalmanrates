@@ -1,5 +1,5 @@
 
-function fits = mult_q_poly_fits(alpha, F, S, qMax)
+function fits = mult_q_poly_fits(alpha, F, S, qMax, verbose)
 % mult_q_poly_fits - Anpassa ML-polynom av olika gradtal.
 %
 % In:
@@ -7,6 +7,8 @@ function fits = mult_q_poly_fits(alpha, F, S, qMax)
 %   F       Funktionsvärden (m x 1)
 %   S       Riktningsderivator (m x 1)
 %   qMax    Högsta polynomgrad som ska testas
+%   verbose (valfri, standard true) false stänger av figuren och
+%           utskrifterna, t.ex. när funktionen anropas från linjesökningen
 %
 % Ut:
 %   fits    Cell-array med resultat från poly_fit_ml.
@@ -14,6 +16,10 @@ function fits = mult_q_poly_fits(alpha, F, S, qMax)
 %
 % Anropar poly_fit_ml en gång för varje gradtal q = 1,...,qMax.
 % Skapar därefter en gemensam figur med samtliga polynomanpassningar.
+
+    if nargin < 5
+        verbose = true;
+    end
 
     %% Kontrollera indata
 
@@ -51,7 +57,9 @@ function fits = mult_q_poly_fits(alpha, F, S, qMax)
 
     for q = 1:qMax
 
-        fprintf('Fitting polynomial with degree q = %d...\n', q);
+        if verbose
+            fprintf('Fitting polynomial with degree q = %d...\n', q);
+        end
 
         % false innebär att varje anpassning inte skapar en egen figur
         fits{q} = poly_fit_ml(alpha, F, S, q, false);
@@ -75,6 +83,10 @@ function fits = mult_q_poly_fits(alpha, F, S, qMax)
         [fits{q}.trendCorrG, fits{q}.pTrendG] = ...
             residual_trend_test(alphaSorted, rG_sorted);
 
+    end
+
+    if ~verbose
+        return
     end
 
     %% Förbered gemensam plottning
