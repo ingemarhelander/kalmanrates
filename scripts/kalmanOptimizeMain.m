@@ -1,5 +1,6 @@
 % kalmanOptimizeMain.m
-% Gradient ascent with backtracking line search for the Kalman objective.
+% Gradient ascent for the Kalman objective, with polynomial line search
+% (line_search_main) or backtracking (line_search), chosen in the config.
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
@@ -97,11 +98,11 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
 end
 
 function lineSearchFcn = select_line_search(config)
-% Returns the line search chosen by config.lineSearch (default backtracking).
+% Returns the line search chosen by config.lineSearch (default polynomial).
 % Keys beginning with ls_ are passed, without the prefix, as options to the
 % polynomial line search (see line_search_main).
 
-    method = 'backtracking';
+    method = 'polynomial';
     if isfield(config, 'lineSearch')
         method = config.lineSearch;
     end
