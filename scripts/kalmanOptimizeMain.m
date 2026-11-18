@@ -1,5 +1,6 @@
 % kalmanOptimizeMain.m
-% Gradient ascent with backtracking line search for the Kalman objective.
+% Gradient ascent for the Kalman objective, with polynomial line search
+% (line_search_main) or backtracking (line_search), chosen in the config.
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
@@ -9,6 +10,7 @@ addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
 config = readConfig(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
@@ -53,7 +55,7 @@ while true
     %Make sure the last n search direction is stored as a base B and run noisy optimization
     [D, B] = store_direction(D, d, noisy_size);
     if size(D, 2) >= noisy_size
-        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config);
+        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
@@ -106,11 +108,11 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
 end
 
 function lineSearchFcn = select_line_search(config)
-% Returns the line search chosen by config.lineSearch (default backtracking).
+% Returns the line search chosen by config.lineSearch (default polynomial).
 % Keys beginning with ls_ are passed, without the prefix, as options to the
 % polynomial line search (see line_search_main).
 
-    method = 'backtracking';
+    method = 'polynomial';
     if isfield(config, 'lineSearch')
         method = config.lineSearch;
     end
