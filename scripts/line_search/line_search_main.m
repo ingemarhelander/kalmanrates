@@ -7,9 +7,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % Gång:
 %   0. dF/dalpha(0) <= 0: d är ingen uppåtriktning, startpunkten returneras
 %      utan någon kalmanObj-körning.
-%   1. Första punkten ges av initial_step_length, i [alphaMin, alphaMax].
-%      Ett steg förbi en undre gräns (negativ varians) ger komplext F, som
-%      sparas som NaN.
+%   1. alphaMax = min(opts.alphaMax, 0.99 * steget till första undre gränsen
+%      längs d), om opts.xLbd är given. Längre steg gör en varians negativ,
+%      och komplext F, för alla större alpha (x + alpha*d är linjärt).
+%      Första punkten ges av initial_step_length, i [alphaMin, alphaMax].
+%      Komplext F (t.ex. utan xLbd) sparas som NaN.
 %   2. En punkt som inte är bättre än F0 (eller är ogiltig) och ligger
 %      bortom den bästa punkten blir ny övre gräns alphaMax.
 %   3. Ingen punkt bättre än F0 än: nästa steg är alphaMax/10.
@@ -18,10 +20,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %      polynomets maximum, som blir nästa punkt.
 %   5. Är maximum exakt en mätt punkt som är ogiltig eller sämre än den
 %      bästa: gå halvvägs mellan den bästa punkten och närmaste mätta
-%      granne på den sidan. Ligger de redan närmare än dMin*alphaMax: stopp.
-%   6. Stopp när maximum ligger nära en mätt punkt (< dMin*alphaMax) där
-%      |S| <= c*|S0| (tidigast efter minEvals punkter), när maximum är den
-%      bästa punkten, eller efter maxEvals punkter.
+%      granne på den sida som lutningen i den bästa punkten pekar mot.
+%      Ligger de redan närmare än dMin*alphaMax: stopp.
+%   6. Stopp när lutningen i den bästa punkten är liten, |S| <= c*|S0|,
+%      eller polynomets maximum ligger nära en mätt punkt med liten lutning
+%      (båda tidigast efter minEvals punkter), när maximum är den bästa
+%      punkten, eller efter maxEvals punkter.
 % Returnerar den giltiga punkten med störst uppmätt F (alpha = 0 om ingen
 % punkt var bättre än startpunkten).
 %
@@ -47,6 +51,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   minEvals  (1)     stoppet på liten lutning gäller först efter så många punkter
 %   alphaMax  (20)    längsta tillåtna steg
 %   alphaMin  (0.1)   kortaste första steg
+%   xLbd      ([])    undre gränser för x (sätts av kalmanOptimizeMain, inte
+%                     i config). Tom: ingen gränskontroll
 
     if nargin < 8 || isempty(opts)
         opts = struct();
@@ -57,11 +63,21 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = opts.alphaMax;    % övre gräns: längsta tillåtna steg
+    alphaBound = Inf;            % 0.99 * steget till första undre gränsen
+    if ~isempty(opts.xLbd)
+        alphaBound = max_feasible_step(x, d, opts.xLbd);
+        alphaMax = min(alphaMax, alphaBound);
+    end
     alphaNew = initial_step_length(g, d, alphaMax, opts.alphaMin);   % första punkten
     S0 = g'*d;                   % startlutning
     stop = false;
 
-    fprintf('  Linjesökning: dF/dalpha(0) = %+.3e, alphaMax = %.3g\n', S0, alphaMax);
+    if alphaBound < opts.alphaMax
+        boundNote = ' (variansgräns)';
+    else
+        boundNote = '';
+    end
+    fprintf('  Linjesökning: dF/dalpha(0) = %+.3e, alphaMax = %.3g%s\n', S0, alphaMax, boundNote);
     fprintf('    %2s  %-9s  %-10s  %-10s  %4s  %-9s  %s\n', ...
             'nr', 'alpha', 'F-F0', 'dF/dalpha', 'grad', 'nästa', 'varför');
 
@@ -72,6 +88,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         nLoop = 0;
         stop = true;
         evals.reason = 'dF/dalpha(0) <= 0, d är ingen uppåtriktning';
+    elseif ~(alphaMax > 0)
+        nLoop = 0;
+        stop = true;
+        evals.reason = 'en varians ligger redan på sin gräns och d pekar nedåt (alphaMax = 0)';
     end
 
     for k = 1:nLoop
@@ -116,6 +136,17 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             continue
         end
 
+        % Stopp: den uppmätta lutningen i den bästa punkten är liten
+        % (först när minst minEvals nya punkter är utvärderade)
+        sBest = evals.G(:, okIdx(iBest))'*d;
+        if k >= opts.minEvals && abs(sBest) <= opts.c*abs(S0)
+            evals.reason = sprintf('lutningen i bästa punkten alpha = %.3g är liten, |dF/dalpha| <= %.2g*|dF/dalpha(0)|', ...
+                                   alphaBest, opts.c);
+            print_rest([], [], 'stopp');
+            stop = true;
+            break
+        end
+
         % ML-polynom i t = alpha/alphaMax till de giltiga punkterna i
         % [0, alphaMax] (även de med sämre F än F0). Punkter längre ut tas
         % inte med: de ligger ofta tiopotenser bort, och ett polynom kan inte
@@ -146,11 +177,16 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % ogiltig (NaN/komplex) eller sämre än den bästa. Polynomet ser inte
         % den punkten (den ligger på gränsen alphaMax eller är ogiltig), så
         % gå halvvägs mellan den bästa punkten och närmaste utvärderade
-        % punkt på samma sida som förslaget. Den nya punkten ligger då
-        % mellan två mätta grannar och är aldrig redan utvärderad.
+        % punkt på den sida där den uppmätta lutningen i den bästa punkten
+        % säger att maximum ligger (positiv: höger, annars vänster). Den nya
+        % punkten ligger då mellan två mätta grannar och är aldrig redan
+        % utvärderad.
         if dist <= 1e-12*alphaHat && i ~= okIdx(iBest)
-            if alphas(i) > alphaBest
+            if sBest > 0
                 neighbour = min(alphas(alphas > alphaBest));
+                if isempty(neighbour)
+                    neighbour = alphaMax;    % ingen mätt punkt till höger
+                end
             else
                 neighbour = max(alphas(alphas < alphaBest));
             end
@@ -235,6 +271,13 @@ function print_rest(q, alphaNext, why)
     fprintf('  %4s  %-9s  %s\n', qStr, nextStr, why);
 end
 
+function alphaLbd = max_feasible_step(x, d, xLbd)
+% 0.99 gånger längsta steget längs d innan någon variabel når sin undre
+% gräns (samma marginal som i find_search_direction). Inf om ingen gräns nås.
+    hits = (d < 0) & isfinite(xLbd);
+    alphaLbd = 0.99*min([Inf; -(x(hits) - xLbd(hits))./d(hits)]);
+end
+
 function ok = valid_points(evals)
 % Punkter som får användas: ändliga F och G (komplexa är redan NaN).
     ok = isfinite(evals.F) & all(isfinite(evals.G), 1);
@@ -244,7 +287,7 @@ function opts = default_opts(opts)
 % Fyller i standardvärden. Okända fält ger fel, så att ett felstavat eller
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
-                 'alphaMax', 20, 'alphaMin', 0.1, 'minEvals', 1);
+                 'alphaMax', 20, 'alphaMin', 0.1, 'minEvals', 1, 'xLbd', []);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
