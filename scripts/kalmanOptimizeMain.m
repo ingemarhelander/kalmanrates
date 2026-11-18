@@ -9,15 +9,17 @@ run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
-config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+config = readConfig(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
 weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
 lineSearchFcn = select_line_search(config); % Line search method and its options
+periods = experimentPeriods(config); % In-sample, training and test periods
+dataSel = read_data_selection(config, periods); % Days and contracts for training and test
 
-[K, varInd, xLbd, x] = setup_problem();
+[K, varInd, xLbd, x, data] = setup_problem(dataSel, periods);
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];           % All orthogonal search directions 
@@ -81,6 +83,14 @@ while true
         break;
     end
 end
+
+%% Out-of-sample test with the optimized parameters
+if ~isempty(dataSel.test)
+    history.outOfSample = evaluateOutOfSample(data.K, data.times, data.keepInstr, ...
+        x, varInd, dataSel.train, dataSel.test);
+    print_out_of_sample(history.outOfSample);
+end
+save_result(x, varInd, data, dataSel, periods, history);
 
 %% ------------------------------ Functions -------------------------------
 
@@ -216,11 +226,14 @@ end
 
 %% Help function given by Jörgen.
 
-function [K, varInd, xLbd, x] = setup_problem()
-% Loads data, sets the starting point, selects which variables to optimize
-% and builds the lower bounds for them.
+function [K, varInd, xLbd, x, data] = setup_problem(dataSel, periods)
+% Loads the model for the periods, sets the starting point, selects which
+% variables to optimize and builds the lower bounds for them. K is the
+% training data chosen in the config; data holds the whole model for the
+% out-of-sample test.
 
-    K = loadKalmanSample();
+    [K, times, ricAll, KI] = loadKalmanModel(periods.modelFile);
+    check_model_periods(KI, periods);
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -230,15 +243,32 @@ function [K, varInd, xLbd, x] = setup_problem()
     Sigma0Ind = (1:length(K.Sigma0)) + axInd(end);
     EfVecInd  = (1:length(K.Ef(:)))  + Sigma0Ind(end);
 
-    % Start from the first stored optimum
-    S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
-    xOpt = S.xOptAll(:,1);
-    K.thetaF = xOpt(thetaFInd);
-    K.Sigmaw = xOpt(SigmawInd);
-    K.Sigmav = xOpt(SigmavInd);
-    K.ax     = xOpt(axInd);
-    K.Sigma0 = xOpt(Sigma0Ind);
-    K.Ef(:)  = xOpt(EfVecInd);
+    % Start point: the model's own start parameters (init) or the first
+    % stored optimum (saved)
+    switch periods.startPoint
+        case 'init'
+            fprintf('Start point: the model''s own start parameters\n');
+        case 'saved'
+            S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
+            xOpt = S.xOptAll(:,1);
+            if numel(xOpt) ~= EfVecInd(end)
+                error('kalmanrates:ModelAlignment', ...
+                      ['kalmanXoptAll.mat has %d parameters but the model needs %d. ' ...
+                       'Use start_point init for this model.'], numel(xOpt), EfVecInd(end));
+            end
+            if periods.hasInsample
+                warning('kalmanrates:NotOutOfSample', ...
+                        ['start_point saved: kalmanXoptAll.mat was not fitted on the ' ...
+                         'in-sample days only, so the test may not be out of sample.']);
+            end
+            K.thetaF = xOpt(thetaFInd);
+            K.Sigmaw = xOpt(SigmawInd);
+            K.Sigmav = xOpt(SigmavInd);
+            K.ax     = xOpt(axInd);
+            K.Sigma0 = xOpt(Sigma0Ind);
+            K.Ef(:)  = xOpt(EfVecInd);
+            fprintf('Start point: kalmanXoptAll.mat\n');
+    end
 
     % Which variables to optimize
     optCase = 9;
@@ -254,6 +284,34 @@ function [K, varInd, xLbd, x] = setup_problem()
         case 9, varInd = [thetaFInd SigmavInd SigmawInd axInd Sigma0Ind];
     end
 
+    % Parameters that belong only to contracts left out of the config do
+    % not affect the likelihood, so they are not optimized (the mu penalty
+    % alone would otherwise push them up without bound).
+    % Contracts without quotes on the training days cannot be fitted either.
+    trainIdx = selectDays(times, dataSel.train);
+    [keepInstr, labels] = selectInstruments(ricAll, K.nu, dataSel.tenors);
+    quoted = false(1, K.nu);
+    for t = trainIdx
+        quoted = quoted | full(any(K.Iz{t}, 1));
+    end
+    unquoted = keepInstr & ~quoted;
+    if any(unquoted)
+        fprintf('Contracts without quotes on the training days are left out: %s\n', ...
+                strjoin(labels(unquoted), ', '));
+        keepInstr = keepInstr & quoted;
+    end
+    if ~any(keepInstr)
+        error('kalmanrates:NoInstruments', 'None of the chosen contracts is quoted on the training days.');
+    end
+    dropped = find(~keepInstr);
+    droppedState = K.ns + dropped;
+    unused = [thetaFInd(droppedState) SigmavInd(dropped) SigmawInd(droppedState) ...
+              axInd(droppedState) Sigma0Ind(droppedState)];
+    varInd = setdiff(varInd, unused, 'stable');
+    if isempty(varInd)
+        error('No parameters left to optimize for the chosen contracts.');
+    end
+
     xInitAll = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
     xLbdAll  = [-ones(size(K.thetaF))*inf ; zeros(size(K.Sigmav)) ; ...
                  zeros(size(K.Sigmaw)) ; -inf*ones(size(K.ax)) ; ...
@@ -261,6 +319,103 @@ function [K, varInd, xLbd, x] = setup_problem()
 
     x    = xInitAll(varInd);
     xLbd = xLbdAll(varInd);
+
+    % Keep the whole model (now holding the start parameters) for the test
+    data = struct('K', K, 'times', times, 'keepInstr', keepInstr);
+    K = subsetKalmanModel(K, trainIdx, keepInstr);
+    print_data_selection(times(trainIdx), labels(keepInstr), dataSel);
+end
+
+function check_model_periods(KI, periods)
+% Stops when the loaded model was not built for the periods of the config.
+
+    if ~periods.hasInsample
+        return;
+    end
+    if ~all(isfield(KI, {'insampleStart', 'insampleEnd', 'pcaCutoff'}))
+        error('kalmanrates:InvalidPeriods', ...
+              '%s has no in-sample metadata. Build it again with buildKalmanModel.', periods.modelFile);
+    end
+    if floor(KI.insampleStart) ~= periods.insampleStart || floor(KI.insampleEnd) ~= periods.insampleEnd
+        error('kalmanrates:InvalidPeriods', ...
+              'The model is built on in-sample %s to %s but the config says %s to %s.', ...
+              datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'), ...
+              datestr(periods.insampleStart, 'yyyy-mm-dd'), datestr(periods.insampleEnd, 'yyyy-mm-dd'));
+    end
+    if ~isempty(periods.testStart) && KI.pcaCutoff > periods.testStart
+        error('kalmanrates:InvalidPeriods', ...
+              'The PCA of the model uses days up to %s, after test_start %s.', ...
+              datestr(KI.pcaCutoff - 1, 'yyyy-mm-dd'), datestr(periods.testStart, 'yyyy-mm-dd'));
+    end
+    fprintf('Model %s: in-sample %s to %s\n', periods.modelFile, ...
+            datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'));
+end
+
+function dataSel = read_data_selection(config, periods)
+% Reads the data selection keys of the config (see kalmanOptimizeMain.config).
+% The dates come from experimentPeriods. Missing keys mean: all weekdays,
+% every day and all contracts. Without test_start there is no
+% out-of-sample test.
+
+    dataSel.train = struct( ...
+        'startDate', periods.trainStart, ...
+        'endDate',   periods.trainEnd, ...
+        'weekdays',  config_value(config, 'weekdays', 'all'), ...
+        'dayStep',   config_value(config, 'day_step', 1));
+    dataSel.tenors = config_value(config, 'tenors', 'all');
+    dataSel.test = [];
+    if ~isempty(periods.testStart)
+        dataSel.test = struct( ...
+            'startDate', periods.testStart, ...
+            'endDate',   periods.testEnd);
+    end
+end
+
+function value = config_value(config, key, default)
+    value = default;
+    if isfield(config, key)
+        value = config.(key);
+    end
+end
+
+function print_data_selection(trainTimes, tenorLabels, dataSel)
+    fprintf('Training data: %d days, %s to %s (weekdays: %s, every %d. day)\n', ...
+        numel(trainTimes), datestr(floor(trainTimes(1)), 'yyyy-mm-dd'), ...
+        datestr(floor(trainTimes(end)), 'yyyy-mm-dd'), ...
+        char(string(dataSel.train.weekdays)), dataSel.train.dayStep);
+    fprintf('Contracts (%d): %s\n', numel(tenorLabels), strjoin(tenorLabels, ', '));
+end
+
+function print_out_of_sample(r)
+    if r.conditional
+        how = 'given all earlier days';
+    else
+        how = 'filter started at the first test day';
+    end
+    fprintf('\nOut-of-sample %s to %s (%s):\n', datestr(r.testStart, 'yyyy-mm-dd'), ...
+        datestr(r.testEnd, 'yyyy-mm-dd'), how);
+    fprintf('  Test:     log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.logLik, r.nDays, r.perDay, r.perObs);
+    fprintf('  Training: log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.trainLogLik, r.trainDays, r.trainPerDay, r.trainPerObs);
+end
+
+function save_result(x, varInd, data, dataSel, periods, history)
+% Saves the run in data/kalmanOptimizeResult.mat for plotOutOfSample.
+% xStart and xOpt are whole parameter vectors (as storeParamVec takes them).
+
+    K = data.K;
+    result.xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    result.xOpt = result.xStart;
+    result.xOpt(varInd) = x;
+    result.varInd = varInd;
+    result.keepInstr = data.keepInstr;
+    result.dataSel = dataSel;
+    result.modelFile = periods.modelFile;
+    result.history = history;
+    result.savedAt = datestr(now, 'yyyy-mm-dd HH:MM');
+    save(dataPath('kalmanOptimizeResult.mat'), '-struct', 'result');
+    fprintf('Saved the result in %s\n', dataPath('kalmanOptimizeResult.mat'));
 end
 
 function [x, f, g] = update_step(xNew, fNew, gNew)
@@ -290,48 +445,4 @@ function history = update_history(history, x, f, g)
     history.normOftravelledDistances(end+1, 1) = norm(history.xInit - x);
     history.xs(:, end+1) = x;
     history.grads(:, end+1) = g;
-end
-
-function config = read_config(configPath)
-% Reads key/value rows into a struct. Blank lines and lines beginning with
-% # or % are ignored.
-
-    fid = fopen(configPath, 'r');
-    if fid == -1
-        error('Could not open config file: %s', configPath);
-    end
-    cleanup = onCleanup(@() fclose(fid));
-    config = struct();
-
-    while true
-        line = fgetl(fid);
-        if ~ischar(line)
-            break;
-        end
-        line = strtrim(line);
-        if isempty(line) || startsWith(line, '#') || startsWith(line, '%')
-            continue;
-        end
-
-        tokens = regexp(line, '^([A-Za-z]\w*)\s+(.+)$', 'tokens', 'once');
-        if isempty(tokens) || ~isvarname(tokens{1})
-            error('Invalid config row: %s', line);
-        end
-
-        key = tokens{1};
-        valueText = strtrim(tokens{2});
-        if strcmpi(valueText, 'true')
-            value = true;
-        elseif strcmpi(valueText, 'false')
-            value = false;
-        else
-            numericValue = str2double(valueText);
-            if ~isnan(numericValue) || strcmpi(valueText, 'nan')
-                value = numericValue;
-            else
-                value = valueText;
-            end
-        end
-        config.(key) = value;
-    end
 end
