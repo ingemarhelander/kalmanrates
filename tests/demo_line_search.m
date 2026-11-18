@@ -1,26 +1,17 @@
-function demo_line_search(method)
-% demo_line_search - Kör hela line_search_main på en påhittad målfunktion.
+function demo_line_search()
+% demo_line_search - Kör line_search_main på en påhittad målfunktion.
 %
 % Målfunktionen har två variabler och brus på f och g. tests/stubs/kalmanObj.m
-% ersätter Kalman, så det behövs varken data eller mex. Line search körs två
-% gånger med samma slumptal:
-%   1. med standardinställningarna (dMin = 0.01),
-%   2. med dMin = 0.001: sökningen stoppar först när polynomets maximum
-%      ligger inom 0.001 från en utvärderad punkt, vilket ger fler punkter.
+% ersätter Kalman, så varken data eller mex behövs. Två körningar med samma
+% slumptal: standardinställningar (dMin = 0.01) och dMin = 0.001, som ger
+% fler punkter innan sökningen stoppar.
 %
-% För varje körning ritas en figur per varv: målfunktionen längs
-% sökriktningen, punkterna hittills (numrerade i ordning), ML-polynomet och
-% nästa steglängd. Titeln visar gradvalet i varvet: vilka grader som
-% provades med de punkter som finns och varför det stannade. Sista figuren
-% i varje körning visar stoppskälet och den returnerade punkten. En sista
-% figur jämför körningarna.
+% En figur per varv visar målfunktionen längs d, punkterna hittills,
+% ML-polynomet, gradvalet och nästa steglängd. Sista figuren jämför
+% körningarna.
 %
-% method (valfri): 'lr' (standard) eller 'lag1'.
 % Kör från projektroten med:  demo_line_search
 
-    if nargin < 1
-        method = 'lr';
-    end
     close all;
     testDir = fileparts(mfilename('fullpath'));
     stubDir = fullfile(testDir, 'stubs');
@@ -45,11 +36,9 @@ function demo_line_search(method)
     for k = 1:size(runs, 1)
         rng(1);
         [f0, g0] = K(x0);
-        fprintf('\n%s, %s:\n', method, runs{k, 1});
-        out = struct('name', runs{k, 1}, 'method', method, 'f0', f0);
-        opts = runs{k, 2};
-        opts.degreeMethod = method;
-        [out.alpha, ~, out.fNew, ~, out.evals] = line_search_main(x0, f0, g0, d, K, [], [], opts);
+        fprintf('\n%s:\n', runs{k, 1});
+        out = struct('name', runs{k, 1}, 'f0', f0);
+        [out.alpha, ~, out.fNew, ~, out.evals] = line_search_main(x0, f0, g0, d, K, [], [], runs{k, 2});
         out.S = d'*out.evals.G;                       % lutning längs d i varje punkt
         results{k} = out;
         plotRounds(out, fLine);
@@ -63,7 +52,6 @@ function plotRounds(out, fLine)
     n = numel(ev.A);
     ok = isfinite(ev.F) & all(isfinite(ev.G), 1);
     aPlot = linspace(0, max(ev.A)*1.1, 300)';
-    qPrev = [];
 
     for k = 2:n
         idx = find(ok(1:k));
@@ -73,13 +61,12 @@ function plotRounds(out, fLine)
         labels = {'Sann f längs d'};
 
         % Gör om gradvalet med samma punkter för att visa vad som provades
-        loopText = 'ingen anpassning (för få giltiga punkter)';
+        loopText = 'ingen anpassning (ingen punkt bättre än startpunkten)';
         if ~isnan(ev.Q(k))
             q = [];  fit = [];  info = [];
-            evalc('[q, fit, info] = ml_poly_main(ev.A(idx), ev.F(idx), out.S(idx), qPrev, out.method);');
-            loopText = describeDegreeLoop(out.method, info, q, numel(idx));
-            qPrev = q;
-            handles(end+1) = plot(aPlot, polyval(flipud(fit.y), aPlot), '-', ...
+            evalc('[q, fit, info] = select_poly_degree(ev.A(idx), ev.F(idx), out.S(idx));');
+            loopText = describeDegreeLoop(info, q);
+            handles(end+1) = plot(aPlot, poly_value(fit, aPlot), '-', ...
                                   'Color', [0.2 0.8 0.2], 'LineWidth', 2); %#ok<AGROW>
             labels{end+1} = sprintf('ML-polynom, q = %d', q); %#ok<AGROW>
         end
@@ -88,7 +75,7 @@ function plotRounds(out, fLine)
         labels{end+1} = 'Utvärderade punkter'; %#ok<AGROW>
         text(ev.A(1:k), ev.F(1:k), arrayfun(@(i) sprintf('  %d', i), 0:k - 1, 'UniformOutput', false));
 
-        heading = sprintf('%s (%s), varv %d: %d punkter', out.method, out.name, k - 1, numel(idx));
+        heading = sprintf('%s, varv %d: %d punkter', out.name, k - 1, numel(idx));
         if k < n
             xline(ev.A(k + 1), '-', 'nästa \alpha', 'Color', [0.3 0.6 1], 'LineWidth', 1.5);
             last = sprintf('Nästa \\alpha = %.3f', ev.A(k + 1));
@@ -109,37 +96,18 @@ function plotRounds(out, fLine)
     end
 end
 
-function s = describeDegreeLoop(method, info, q, m)
+function s = describeDegreeLoop(info, q)
 % Text som beskriver vilka grader som provades och varför loopen stannade.
     parts = {};
-    if strcmp(method, 'lr')
-        for k = 1:numel(info.LR)
-            if info.LR(k) > info.crit
-                parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f > %.2f, höj', k + 1, k + 2, info.LR(k), info.crit); %#ok<AGROW>
-            else
-                parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f \\leq %.2f, stanna', k + 1, k + 2, info.LR(k), info.crit); %#ok<AGROW>
-            end
+    for k = 1:numel(info.LR)
+        if info.LR(k) > info.crit
+            parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f > %.2f, höj', k + 1, k + 2, info.LR(k), info.crit); %#ok<AGROW>
+        else
+            parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f \\leq %.2f, stanna', k + 1, k + 2, info.LR(k), info.crit); %#ok<AGROW>
         end
-        if q == info.qMax
-            parts{end+1} = sprintf('taket m - 2 = %d', info.qMax); %#ok<AGROW>
-        end
-    else
-        qMax = 2;
-        if m >= 4
-            qMax = min(6, 2*m - 3);
-        end
-        for k = 1:numel(info.q)
-            if m < 4
-                parts{end+1} = 'färre än 4 punkter: bara q = 2'; %#ok<AGROW>
-            elseif max(info.rho(k, :)) <= info.tau(k)
-                parts{end+1} = sprintf('q = %d: \\rho = %.2f \\leq \\tau = %.2f, OK', info.q(k), max(info.rho(k, :)), info.tau(k)); %#ok<AGROW>
-            else
-                parts{end+1} = sprintf('q = %d: \\rho = %.2f > \\tau = %.2f, höj', info.q(k), max(info.rho(k, :)), info.tau(k)); %#ok<AGROW>
-            end
-        end
-        if m >= 4 && q == qMax
-            parts{end+1} = sprintf('taket %d', qMax); %#ok<AGROW>
-        end
+    end
+    if q == info.qMax
+        parts{end+1} = sprintf('taket m - 2 = %d', info.qMax);
     end
     s = sprintf('q = %d', q);
     if ~isempty(parts)
@@ -170,5 +138,5 @@ function plotComparison(results, fLine)
     xlabel('Steglängd \alpha');
     ylabel('f(x_0 + \alpha d)');
     legend(handles, labels, 'Location', 'best');
-    title(sprintf('%s: standard mot dMin = 0.001', results{1}.method));
+    title('Standard mot dMin = 0.001');
 end
