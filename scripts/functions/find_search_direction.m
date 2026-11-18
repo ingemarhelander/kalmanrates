@@ -11,11 +11,11 @@ function [d, D] = find_search_direction(x, g, xLbd, D)
         if norm_d > 0
             d = d / norm_d;
         end
-        fprintf('[find_search_direction] Använder normaliserad gradient som initial sökriktning.\n');
+        fprintf('[find_search_direction] Using normalized gradient as initial search direction.\n');
     else
         % 2. Orthonormalisation
         % Gram-Schmidt
-        fprintf('[find_search_direction] Utför Gram-Schmidt mot %d tidigare riktning(ar)...\n', size(D, 2));
+        fprintf('[find_search_direction]Performing Gram-Schmidt against %d previous direction(s)...\n', size(D, 2));
         U = orth(D);
         d = d - U * (U' * d);
         
