@@ -9,13 +9,15 @@ run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
-config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+config = readConfig(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
 weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
-[K, varInd, xLbd, x] = setup_problem();
+periods = experimentPeriods(config); % In-sample, optimization and out-of-sample periods
+
+[K, varInd, xLbd, x, data] = setup_problem(periods);
 lineSearchFcn = select_line_search(config, xLbd); % Line search method and its options
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
@@ -80,6 +82,13 @@ while true
         break;
     end
 end
+
+%% Out-of-sample evaluation with the optimized parameters
+if ~isempty(periods.outOfSampleStart)
+    history.outOfSample = evaluateOutOfSample(data.K, data.times, x, varInd, periods);
+    print_out_of_sample(history.outOfSample);
+end
+save_result(x, varInd, data.K, periods, history);
 
 %% ------------------------------ Functions -------------------------------
 
@@ -217,11 +226,14 @@ end
 
 %% Help function given by Jörgen.
 
-function [K, varInd, xLbd, x] = setup_problem()
-% Loads data, sets the starting point, selects which variables to optimize
-% and builds the lower bounds for them.
+function [K, varInd, xLbd, x, data] = setup_problem(periods)
+% Loads the model for the periods, sets the starting point, selects which
+% variables to optimize and builds the lower bounds for them. K holds the
+% optimization days; data holds the whole model for the out-of-sample
+% evaluation.
 
-    K = loadKalmanSample();
+    [K, times, ricAll, KI] = loadKalmanModel(periods.modelFile);
+    check_model_periods(KI, periods);
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -231,15 +243,32 @@ function [K, varInd, xLbd, x] = setup_problem()
     Sigma0Ind = (1:length(K.Sigma0)) + axInd(end);
     EfVecInd  = (1:length(K.Ef(:)))  + Sigma0Ind(end);
 
-    % Start from the first stored optimum
-    S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
-    xOpt = S.xOptAll(:,1);
-    K.thetaF = xOpt(thetaFInd);
-    K.Sigmaw = xOpt(SigmawInd);
-    K.Sigmav = xOpt(SigmavInd);
-    K.ax     = xOpt(axInd);
-    K.Sigma0 = xOpt(Sigma0Ind);
-    K.Ef(:)  = xOpt(EfVecInd);
+    % Start point: the model's own start parameters (init) or the first
+    % stored optimum (saved)
+    switch periods.startPoint
+        case 'init'
+            fprintf('Start point: the model''s own start parameters\n');
+        case 'saved'
+            S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
+            xOpt = S.xOptAll(:,1);
+            if numel(xOpt) ~= EfVecInd(end)
+                error('kalmanrates:ModelAlignment', ...
+                      ['kalmanXoptAll.mat has %d parameters but the model needs %d. ' ...
+                       'Use start_point init for this model.'], numel(xOpt), EfVecInd(end));
+            end
+            if periods.hasInsample
+                warning('kalmanrates:NotOutOfSample', ...
+                        ['start_point saved: kalmanXoptAll.mat was not fitted on the ' ...
+                         'in-sample days only, so the evaluation may not be out of sample.']);
+            end
+            K.thetaF = xOpt(thetaFInd);
+            K.Sigmaw = xOpt(SigmawInd);
+            K.Sigmav = xOpt(SigmavInd);
+            K.ax     = xOpt(axInd);
+            K.Sigma0 = xOpt(Sigma0Ind);
+            K.Ef(:)  = xOpt(EfVecInd);
+            fprintf('Start point: kalmanXoptAll.mat\n');
+    end
 
     % Which variables to optimize
     optCase = 9;
@@ -255,6 +284,23 @@ function [K, varInd, xLbd, x] = setup_problem()
         case 9, varInd = [thetaFInd SigmavInd SigmawInd axInd Sigma0Ind];
     end
 
+    % Contracts without quotes on the optimization days do not affect the
+    % likelihood, so their parameters are not optimized (the mu penalty
+    % alone would otherwise push them up without bound).
+    optimizeIdx = selectDays(times, periods.optimizeStart, periods.optimizeEnd);
+    quoted = false(1, K.nu);
+    for t = optimizeIdx
+        quoted = quoted | full(any(K.Iz{t}, 1));
+    end
+    if ~all(quoted)
+        unquoted = find(~quoted);
+        fprintf('Contracts without quotes on the optimization days are not optimized: %s\n', ...
+                strjoin(ricAll(unquoted), ', '));
+        state = K.ns + unquoted;
+        varInd = setdiff(varInd, [thetaFInd(state) SigmavInd(unquoted) SigmawInd(state) ...
+                                  axInd(state) Sigma0Ind(state)], 'stable');
+    end
+
     xInitAll = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
     xLbdAll  = [-ones(size(K.thetaF))*inf ; zeros(size(K.Sigmav)) ; ...
                  zeros(size(K.Sigmaw)) ; -inf*ones(size(K.ax)) ; ...
@@ -262,6 +308,64 @@ function [K, varInd, xLbd, x] = setup_problem()
 
     x    = xInitAll(varInd);
     xLbd = xLbdAll(varInd);
+
+    % Keep the whole model (now holding the start parameters) for the
+    % out-of-sample evaluation
+    data = struct('K', K, 'times', times);
+    K = subsetKalmanModel(K, optimizeIdx);
+    fprintf('Optimization data: %d days, %s to %s\n', numel(optimizeIdx), ...
+            datestr(floor(times(optimizeIdx(1))), 'yyyy-mm-dd'), datestr(floor(times(optimizeIdx(end))), 'yyyy-mm-dd'));
+end
+
+function check_model_periods(KI, periods)
+% Stops when the loaded model was not built for the periods of the config.
+
+    if ~periods.hasInsample
+        return;
+    end
+    if ~all(isfield(KI, {'insampleStart', 'insampleEnd', 'pcaCutoff'}))
+        error('kalmanrates:InvalidPeriods', ...
+              '%s has no in-sample metadata. Build it again with buildKalmanModel.', periods.modelFile);
+    end
+    if floor(KI.insampleStart) ~= periods.insampleStart || floor(KI.insampleEnd) ~= periods.insampleEnd
+        error('kalmanrates:InvalidPeriods', ...
+              'The model is built on in-sample %s to %s but the config says %s to %s.', ...
+              datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'), ...
+              datestr(periods.insampleStart, 'yyyy-mm-dd'), datestr(periods.insampleEnd, 'yyyy-mm-dd'));
+    end
+    if ~isempty(periods.outOfSampleStart) && KI.pcaCutoff > periods.outOfSampleStart
+        error('kalmanrates:InvalidPeriods', ...
+              'The PCA of the model uses days up to %s, after out_of_sample_start %s.', ...
+              datestr(KI.pcaCutoff - 1, 'yyyy-mm-dd'), datestr(periods.outOfSampleStart, 'yyyy-mm-dd'));
+    end
+    fprintf('Model %s: in-sample %s to %s\n', periods.modelFile, ...
+            datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'));
+end
+
+function print_out_of_sample(r)
+    fprintf('\nOut-of-sample %s to %s (given all earlier days):\n', ...
+        datestr(r.outOfSampleStart, 'yyyy-mm-dd'), datestr(r.outOfSampleEnd, 'yyyy-mm-dd'));
+    fprintf('  Out-of-sample: log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.logLik, r.nDays, r.perDay, r.perObs);
+    fprintf('  Optimization:  log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.optimizeLogLik, r.optimizeDays, r.optimizePerDay, r.optimizePerObs);
+end
+
+function save_result(x, varInd, K, periods, history)
+% Saves the run in data/kalmanOptimizeResult.mat for plotOutOfSample.
+% K is the whole model holding the start parameters. xStart and xOpt are
+% whole parameter vectors (as storeParamVec takes them).
+
+    result.xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    result.xOpt = result.xStart;
+    result.xOpt(varInd) = x;
+    result.varInd = varInd;
+    result.periods = periods;
+    result.modelFile = periods.modelFile;
+    result.history = history;
+    result.savedAt = datestr(now, 'yyyy-mm-dd HH:MM');
+    save(dataPath('kalmanOptimizeResult.mat'), '-struct', 'result');
+    fprintf('Saved the result in %s\n', dataPath('kalmanOptimizeResult.mat'));
 end
 
 function [x, f, g] = update_step(xNew, fNew, gNew)
@@ -291,48 +395,4 @@ function history = update_history(history, x, f, g)
     history.normOftravelledDistances(end+1, 1) = norm(history.xInit - x);
     history.xs(:, end+1) = x;
     history.grads(:, end+1) = g;
-end
-
-function config = read_config(configPath)
-% Reads key/value rows into a struct. Blank lines and lines beginning with
-% # or % are ignored.
-
-    fid = fopen(configPath, 'r');
-    if fid == -1
-        error('Could not open config file: %s', configPath);
-    end
-    cleanup = onCleanup(@() fclose(fid));
-    config = struct();
-
-    while true
-        line = fgetl(fid);
-        if ~ischar(line)
-            break;
-        end
-        line = strtrim(line);
-        if isempty(line) || startsWith(line, '#') || startsWith(line, '%')
-            continue;
-        end
-
-        tokens = regexp(line, '^([A-Za-z]\w*)\s+(.+)$', 'tokens', 'once');
-        if isempty(tokens) || ~isvarname(tokens{1})
-            error('Invalid config row: %s', line);
-        end
-
-        key = tokens{1};
-        valueText = strtrim(tokens{2});
-        if strcmpi(valueText, 'true')
-            value = true;
-        elseif strcmpi(valueText, 'false')
-            value = false;
-        else
-            numericValue = str2double(valueText);
-            if ~isnan(numericValue) || strcmpi(valueText, 'nan')
-                value = numericValue;
-            else
-                value = valueText;
-            end
-        end
-        config.(key) = value;
-    end
 end

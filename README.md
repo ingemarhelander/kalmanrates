@@ -26,9 +26,40 @@ Skattning av EUR-räntekurvan (OIS) som en tillståndsmodell med Kalmanfilter. K
 
    För modellinitiering, RTS och figurer används `runReducedIrCurvesV2`. Se [toolboxkrav och felsökning](docs/felsokning.md).
 
+## Out-of-sample-test
+
+För en utvärdering som är out-of-sample även för modellbygget (PCA och startparametrar) styr
+`scripts/kalmanOptimizeMain.config` tre perioder. Datum skrivs `yyyy-mm-dd` och ändpunkterna ingår.
+
+| Nycklar | Betydelse | Regel / standard |
+|---|---|---|
+| `insample_start`, `insample_end` | dagar som modellen byggs på | båda eller ingen |
+| `optimize_start`, `optimize_end` | dagar som parametrarna optimeras på | inom in-sample; standard hela in-sample |
+| `out_of_sample_start`, `out_of_sample_end` | out-of-sample-period | börjar efter `insample_end`; saknas `out_of_sample_end` används datans sista dag |
+| `start_point` | `init` (modellens startparametrar) eller `saved` (`kalmanXoptAll.mat`) | `init` med in-sample, annars `saved` |
+
+Bygg först modellen och kör sedan optimeringen:
+
+```matlab
+setupPaths
+buildKalmanModel     % sparar data/kalmanModel_<insample_start>_<insample_end>_<out_of_sample_end eller end>.mat
+kalmanOptimizeMain   % laddar samma fil, optimerar och utvärderar out-of-sample
+```
+
+`buildKalmanModel` behöver `EUR100.mat`, `EUR.mat` och MEX-filerna. Bygg om modellen när
+in-sample eller `out_of_sample_end` ändras; optimeringsperioden kan ändras utan ombyggnad.
+`kalmanOptimizeMain` avbryter om modellens in-sample inte stämmer med configen eller om
+PCA:n använder dagar från out-of-sample-perioden. Parametrar för kontrakt utan noteringar under
+optimeringsdagarna optimeras inte. Kör `plotOutOfSample` efteråt för en figur över optimering och
+out-of-sample.
+
+Saknas in-sample-raderna används `kalmanDebug.mat` som tidigare, med en varning om att
+utvärderingen inte är garanterat out-of-sample.
+
 ## Välj antal dagar
 
-I `modelRunConfig.m` styr `config.maxObservations` både modellinitiering och optimering.
+I `modelRunConfig.m` styr `config.maxObservations` både modellinitiering och optimering
+(utom i `buildKalmanModel`, där in-sample och out-of-sample-perioden styr).
 Standardvärdet `250` använder de första 250 handelsdagarna för laptopkörning.
 Ändra lokalt till `Inf` för hela historiken, exempelvis på simhall.
 Korta körningars resultat får tillägget `_sample250` (eller valt antal dagar).
@@ -115,6 +146,7 @@ flowchart TD
         V2["runReducedIrCurvesV2.m<br/>huvudskript"]
         INIT["runReducedIrCurvesInit.m"]
         CLSS["runReducedIrCurvesCls.m"]
+        BUILD["buildKalmanModel.m"]
         OPTMAIN["kalmanOptimizeMain.m"]
         OPTM["kalmanOptimizeMatlab.m<br/>fmincon"]
         OPTSD["kalmanOptimizeSD.m<br/>brantaste lutning"]
@@ -156,6 +188,10 @@ flowchart TD
     KIR --> TAY
     KSUB --> KIR
 
+    BUILD --> INIT
+    BUILD --> CLSS
+    BUILD -.->|sparar| KMODEL[("kalmanModel_*.mat")]
+    KMODEL -.-> OPTMAIN
     KDEBUG -.-> LOAD
     OPTMAIN --> LOAD
     OPTM --> LOAD
@@ -183,7 +219,9 @@ flowchart TD
 - `runReducedIrCurvesV2.m` – huvudskript: kör Init + Cls, RTS-iterationer, plottar
 - `runReducedIrCurvesInit.m` – PCA, ECB-datum och instrumentdata per dag
 - `runReducedIrCurvesCls.m` – startparametrar, skapar Kalman-objektet `K`
-- `kalmanOptimizeMain.m` – optimering med sökriktning, linjesökning och denoising
+- `buildKalmanModel.m` – bygger modellen för configens in-sample- och out-of-sample-period, sparar `data/kalmanModel_*.mat`
+- `kalmanOptimizeMain.m` – optimering med sökriktning, linjesökning och denoising, följt av out-of-sample-test
+- `kalmanOptimizeMain.config` – inställningar: perioder, dagar, kontrakt, linjesökning
 - `kalmanOptimizeMatlab.m` – ML-skattning med `fmincon`
 - `kalmanOptimizeSD.m` – ML-skattning med brantaste lutning
 
@@ -196,6 +234,11 @@ flowchart TD
 - `marketInfo.m` – marknadskonventioner per valuta
 - `kalmanObj.m` / `kalmanObjMin.m` – målfunktion + gradient för optimering
 - `loadKalmanSample.m` – laddar sparad modell och tillämpar observationstaket
+- `loadKalmanModel.m` – laddar en hel sparad modell (`kalmanDebug.mat` eller en given fil) med `KI`
+- `readConfig.m` – läser en config-fil med nyckel/värde-rader
+- `experimentPeriods.m` – läser och kontrollerar in-sample-, optimerings- och out-of-sample-perioden, ger modellfilens namn
+- `selectDays.m`, `subsetKalmanModel.m` – urval av dagar
+- `evaluateOutOfSample.m` – log-likelihood för testdagarna med optimerade parametrar
 - `limitKalmanObservations.m` – kortar modellens dagliga fält tillsammans
 - `selectObservations.m` – väljer dagar och resultatfilernas tillägg
 
@@ -223,12 +266,15 @@ flowchart TD
 - `EUR.mat` \* – rådata i MATLAB-format
 - `EUR100.mat` \* – forwardkurvor 2005–2025 (287 MB)
 - `kalmanDebug.mat` \* – sparat Kalman-objekt
+- `kalmanModel_*.mat` \* – modeller från `buildKalmanModel` (K och KI med in-sample-metadata)
 - `kalmanXoptAll.mat` \* – optimerade parametrar
 - `axRtsOpt.mat` \* – starttillstånd från RTS
 
 **tests/**
 
 - `testDataLimit.m` – dataurval, oförändrade parametrar och PCA med kort historik
+- `testDataSelection.m` – urval av dagar och kontrakt
+- `testExperimentPeriods.m` – periodreglerna i configen och `readConfig`
 - `testAdCounts.m` och `mex/testAdCountsMex.cpp` – AD-räknaren
 - `test_denoise_quadratic_approximation.m` – denoising med syntetiska data
 
