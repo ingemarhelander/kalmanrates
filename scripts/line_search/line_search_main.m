@@ -20,10 +20,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %      polynomets maximum, som blir nästa punkt.
 %   5. Är maximum exakt en mätt punkt som är ogiltig eller sämre än den
 %      bästa: gå halvvägs mellan den bästa punkten och närmaste mätta
-%      granne på den sidan. Ligger de redan närmare än dMin*alphaMax: stopp.
-%   6. Stopp när maximum ligger nära en mätt punkt (< dMin*alphaMax) där
-%      |S| <= c*|S0| (tidigast efter minEvals punkter), när maximum är den
-%      bästa punkten, eller efter maxEvals punkter.
+%      granne på den sida som lutningen i den bästa punkten pekar mot.
+%      Ligger de redan närmare än dMin*alphaMax: stopp.
+%   6. Stopp när lutningen i den bästa punkten är liten, |S| <= c*|S0|,
+%      eller polynomets maximum ligger nära en mätt punkt med liten lutning
+%      (båda tidigast efter minEvals punkter), när maximum är den bästa
+%      punkten, eller efter maxEvals punkter.
 % Returnerar den giltiga punkten med störst uppmätt F (alpha = 0 om ingen
 % punkt var bättre än startpunkten).
 %
@@ -134,6 +136,17 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             continue
         end
 
+        % Stopp: den uppmätta lutningen i den bästa punkten är liten
+        % (först när minst minEvals nya punkter är utvärderade)
+        sBest = evals.G(:, okIdx(iBest))'*d;
+        if k >= opts.minEvals && abs(sBest) <= opts.c*abs(S0)
+            evals.reason = sprintf('lutningen i bästa punkten alpha = %.3g är liten, |dF/dalpha| <= %.2g*|dF/dalpha(0)|', ...
+                                   alphaBest, opts.c);
+            print_rest([], [], 'stopp');
+            stop = true;
+            break
+        end
+
         % ML-polynom i t = alpha/alphaMax till de giltiga punkterna i
         % [0, alphaMax] (även de med sämre F än F0). Punkter längre ut tas
         % inte med: de ligger ofta tiopotenser bort, och ett polynom kan inte
@@ -164,11 +177,16 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % ogiltig (NaN/komplex) eller sämre än den bästa. Polynomet ser inte
         % den punkten (den ligger på gränsen alphaMax eller är ogiltig), så
         % gå halvvägs mellan den bästa punkten och närmaste utvärderade
-        % punkt på samma sida som förslaget. Den nya punkten ligger då
-        % mellan två mätta grannar och är aldrig redan utvärderad.
+        % punkt på den sida där den uppmätta lutningen i den bästa punkten
+        % säger att maximum ligger (positiv: höger, annars vänster). Den nya
+        % punkten ligger då mellan två mätta grannar och är aldrig redan
+        % utvärderad.
         if dist <= 1e-12*alphaHat && i ~= okIdx(iBest)
-            if alphas(i) > alphaBest
+            if sBest > 0
                 neighbour = min(alphas(alphas > alphaBest));
+                if isempty(neighbour)
+                    neighbour = alphaMax;    % ingen mätt punkt till höger
+                end
             else
                 neighbour = max(alphas(alphas < alphaBest));
             end

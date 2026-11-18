@@ -60,7 +60,9 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             [f0, g0] = K([0; 0]);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
             testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.02);
-            testCase.verifyTrue(contains(evals.reason, 'ligger nära'), evals.reason);
+            % Stopp på liten lutning, i bästa punkten eller vid polynomets max
+            testCase.verifyTrue(contains(evals.reason, 'ligger nära') || ...
+                                contains(evals.reason, 'är liten'), evals.reason);
         end
 
         function neverRepeatsAnAlpha(testCase)
@@ -240,6 +242,25 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                                                struct('alphaMax', 20, 'alphaMin', 0.1, 'xLbd', [0; -Inf]));
             testCase.verifyEqual(alpha, 0);
             testCase.verifyEqual(numel(evals.A), 1);
+        end
+
+        function halvingFollowsSlopeAtBest(testCase)
+            % Varje halvvägs-steg ska gå åt det håll som lutningen i den
+            % bästa punkten pekar: positiv lutning -> större alpha.
+            Kb = @(x) deal(10*x(1) + 0.01*log(1 - x(1)), [10 - 0.01/(1 - x(1)); 0]);
+            [f0, g0] = Kb([0; 0]);
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kb, ...
+                                           struct('alphaMax', 20, 'alphaMin', 0.1, 'dMin', 1e-3));
+            % Lutningen är positiv ända fram till 0.999, så alla giltiga
+            % punkter efter den första ska ligga till höger om den bästa före
+            A = evals.A(2:end);
+            S = evals.G(1, 2:end);
+            for j = 2:numel(A)
+                [~, b] = max(evals.F(2:j));        % bästa punkten före punkt j
+                if S(b) > 0 && evals.F(j+1) < max(evals.F(2:j)) && A(j) < A(b)
+                    testCase.verifyFail(sprintf('punkt %d (alpha = %.4g) ligger till vänster om bästa', j, A(j)));
+                end
+            end
         end
 
         function halvingStopsAtBoundary(testCase)
