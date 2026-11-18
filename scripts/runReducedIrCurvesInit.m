@@ -73,29 +73,8 @@ if ~isempty(indIBORON)
 end
 
 eligibleIndices = find(keepDates);
-% buildKalmanModel sets buildPeriods. With in-sample set, the days from
-% insample_start to test_end are kept and the PCA uses only in-sample days.
-useInsample = exist('buildPeriods', 'var') && buildPeriods.hasInsample;
-if useInsample
-  if flgTick
-    error('kalmanrates:InvalidPeriods', 'In-sample periods are not supported with tick data.');
-  end
-  eligibleDays = floor(times(eligibleIndices));
-  sampleIndices = find(eligibleDays >= buildPeriods.insampleStart & ...
-                       eligibleDays <= buildPeriods.buildEnd);
-  if isempty(sampleIndices)
-    error('kalmanrates:NoObservations', 'No trading days from %s to the end of the build period.', ...
-          datestr(buildPeriods.insampleStart, 'yyyy-mm-dd'));
-  end
-  runOutputSuffix = '';
-  outOfSampleStartDate = buildPeriods.insampleEnd + 1;
-  fprintf('Using %d observations: %s to %s\n', numel(sampleIndices), ...
-          datestr(eligibleDays(sampleIndices(1)), 'yyyy-mm-dd'), ...
-          datestr(eligibleDays(sampleIndices(end)), 'yyyy-mm-dd'));
-else
-  [sampleIndices, runOutputSuffix] = selectObservations(numel(eligibleIndices), ...
-      runConfig.maxObservations, times(eligibleIndices));
-end
+[sampleIndices, runOutputSuffix] = selectObservations(numel(eligibleIndices), ...
+    runConfig.maxObservations, times(eligibleIndices));
 selectedIndices = eligibleIndices(sampleIndices);
 times = times(selectedIndices);
 
@@ -115,11 +94,7 @@ firstDatesPCA = firstDates;
 [fH, piH, lastDatesPCA, nIn, ef, Ef, fTotVar, ePi, EPi, piTotVar] = pcaIRS(curveTimes, fH, piH, firstDates, lastDates, outOfSampleStartDate);
 
 nH = min(lastDatesPCA-firstDates);
-if useInsample
-  C = cov(fH(1:nIn,1:nH)); % Only in-sample days, the rest are out of sample
-else
-  C = cov(fH(:,1:nH));
-end
+C = cov(fH(:,1:nH));
 nEigs = 6;
 [V,D] = eigs(C, nEigs);
 [ef,ind] = sort(diag(D),1, 'descend');
