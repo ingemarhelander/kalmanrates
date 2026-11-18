@@ -10,6 +10,7 @@ addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
 config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
@@ -51,8 +52,8 @@ while true
     
     %Make sure the last n search direction is stored as a base B and run noisy optimization
     [D, B] = store_direction(D, d, noisy_size);
-    if iter > noisy_size
-        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config);
+    if size(D, 2) >= noisy_size
+        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else

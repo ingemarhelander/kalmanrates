@@ -70,7 +70,8 @@ function checkDenoising(testCase, f, g, seed)
     evals.F = noisyF;
     evals.G = noisyG;
     estimatedDirection = denoise(center, noisyF(end), noisyG(:, end), ...
-        eye(2), {evals}, 2, [], [], [], -inf(2, 1), struct('fixed_or_exact', 1));
+        eye(2), {evals}, 2, [], [], [], -inf(2, 1), ...
+        struct('fixed_or_exact', 1), struct('w_xi', 1, 'wbar_xi', 1));
 
     trueDirection = trueGradient / norm(trueGradient);
     noisyCenterDirection = noisyG(:, end) / norm(noisyG(:, end));
