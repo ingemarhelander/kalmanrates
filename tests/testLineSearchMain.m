@@ -113,7 +113,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             rng(1);
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
-            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, 'lr', ...
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, ...
                                            struct('maxEvals', 2, 'dMin', 1e-9));
             testCase.verifyEqual(numel(evals.A), 3);
             testCase.verifyTrue(contains(evals.reason, 'maxEvals'), evals.reason);
@@ -150,7 +150,77 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyTrue(isfinite(fNew));
             testCase.verifyTrue(all(isfinite(gNew)));
             testCase.verifyLessThanOrEqual(alpha, 0.5);
-            testCase.verifyTrue(any(~isfinite(evals.F)));
+            % NaN-punkten (alpha = 1) är utvärderad men inte med i evals
+            testCase.verifyTrue(all(isfinite(evals.F)) && all(isfinite(evals.G(:))));
+            testCase.verifyFalse(any(evals.A == 1));
+        end
+
+        function firstStepFromInitialStepLength(testCase)
+            % Första steget är deltaF/(g'*d) = 100/S0, begränsat till
+            % [alphaMin, alphaMax].
+            K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
+            [f0, g0] = K([0; 0]);              % S0 = 0.6 längs d = [1; 0]
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
+                                           struct('alphaMax', 20, 'alphaMin', 0.1));
+            testCase.verifyEqual(evals.A(2), 20);   % 100/0.6 > 20
+            K = @(x) deal(-1e3*(x(1) - 1)^2, [-2e3*(x(1) - 1); 0]);
+            [f0, g0] = K([0; 0]);              % S0 = 2000
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
+                                           struct('alphaMax', 20, 'alphaMin', 0.1));
+            testCase.verifyEqual(evals.A(2), 0.1);  % 100/2000 < alphaMin
+        end
+
+        function complexValuesAreInvalid(testCase)
+            % Ett för långt steg ger log av ett negativt tal.
+            % Sådana punkter ska sparas som NaN, inte bli förbättringar.
+            % Startlutning 4.5, så första steget blir alphaMax = 20.
+            Kd = @(x) deal(log(2 - x(1)) - 0.1*x(1)^2 + 5*x(1), [-1/(2 - x(1)) - 0.2*x(1) + 5; 0]);
+            [f0, g0] = Kd([0; 0]);
+            [~, ~, fNew, gNew, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kd, ...
+                                                 struct('alphaMax', 20, 'alphaMin', 0.1));
+            testCase.verifyTrue(isreal(fNew) && isreal(gNew));
+            testCase.verifyGreaterThan(fNew, f0);
+            % alpha = 20 gav komplext F och är borttagen ur evals
+            testCase.verifyFalse(any(evals.A == 20));
+            testCase.verifyTrue(isreal(evals.F) && all(isfinite(evals.F)));
+        end
+
+        function nonAscentDirectionEvaluatesNothing(testCase)
+            % dF/dalpha(0) < 0: ingen Kalman-körning, startpunkten returneras.
+            K = objective(0.05, 0.1);
+            [f0, g0] = K([0; 0]);
+            [alpha, xNew, fNew, ~, evals] = runQuiet([0; 0], f0, g0, -[2; 0.5], K);
+            testCase.verifyEqual(alpha, 0);
+            testCase.verifyEqual(xNew, [0; 0]);
+            testCase.verifyEqual(fNew, f0);
+            testCase.verifyEqual(numel(evals.A), 1);
+            testCase.verifyTrue(contains(evals.reason, 'uppåtriktning'), evals.reason);
+        end
+
+        function repeatedInvalidProposalGoesHalfway(testCase)
+            % F ökar ända fram till gränsen alpha = 2 (log(2 - alpha)), med
+            % maximum vid alpha ~ 1.8. Efter krympningen till 0.2 föreslår
+            % polynomet gränsen igen. Sökningen ska gå halvvägs mot den i
+            % stället för att stoppa vid 0.2.
+            Kd = @(x) deal(log(2 - x(1)) - 0.1*x(1)^2 + 5*x(1), [-1/(2 - x(1)) - 0.2*x(1) + 5; 0]);
+            [f0, g0] = Kd([0; 0]);
+            [alpha, ~, fNew] = runQuiet([0; 0], f0, g0, [1; 0], Kd, ...
+                                        struct('alphaMax', 20, 'alphaMin', 0.1));
+            testCase.verifyGreaterThan(alpha, 1);
+            testCase.verifyGreaterThan(fNew, f0);
+        end
+
+        function halvingStopsAtBoundary(testCase)
+            % F ökar ända fram till gränsen alpha = 1 (log(1 - alpha) ger
+            % komplext F bortom). Halveringen mot gränsen ska stoppa när
+            % intervallet är mindre än dMin*alphaMax, inte gå till maxEvals.
+            Kb = @(x) deal(10*x(1) + 0.01*log(1 - x(1)), [10 - 0.01/(1 - x(1)); 0]);
+            [f0, g0] = Kb([0; 0]);
+            [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kb, ...
+                                                  struct('alphaMax', 20, 'alphaMin', 0.1, 'dMin', 1e-3));
+            testCase.verifyTrue(contains(evals.reason, 'inringat'), evals.reason);
+            testCase.verifyGreaterThan(alpha, 0.99);
+            testCase.verifyGreaterThan(fNew, f0);
         end
 
         function oldOptionsGiveError(testCase)
@@ -193,9 +263,13 @@ end
 
 function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, opts)
 % line_search_main utan utskrifter.
+% Om inget annat anges är första steget alpha = 1 och alphaMax = 1, så att
+% testerna ovan inte beror på initial_step_length.
     if nargin < 6
         opts = struct();
     end
+    if ~isfield(opts, 'alphaMax'), opts.alphaMax = 1; end
+    if ~isfield(opts, 'alphaMin'), opts.alphaMin = 1; end
     alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
     evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts);');
 end
