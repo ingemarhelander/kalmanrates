@@ -5,34 +5,30 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % kalmanOptimizeMain kan välja mellan dem.
 %
 % Gång:
-%   0. dF/dalpha(0) <= 0: d är ingen uppåtriktning, startpunkten returneras
-%      utan någon kalmanObj-körning.
-%   1. alphaMax = min(opts.alphaMax, 0.99 * steget till första undre gränsen
-%      längs d), om opts.xLbd är given. Längre steg gör en varians negativ,
-%      och komplext F, för alla större alpha (x + alpha*d är linjärt).
-%      Första punkten ges av initial_step_length, i [alphaMin, alphaMax].
-%      Komplext F (t.ex. utan xLbd) sparas som NaN.
-%   2. En punkt som inte är bättre än F0 (eller är ogiltig) och ligger
-%      bortom den bästa punkten blir ny övre gräns alphaMax.
-%   3. Ingen punkt bättre än F0 än: nästa steg är alphaMax/10.
-%   4. Annars: anpassa ML-polynom (select_poly_degree) till de giltiga
-%      punkterna i [0, alphaMax], i t = alpha/alphaMax. find_step_length ger
-%      polynomets maximum, som blir nästa punkt.
-%   5. Är maximum exakt en mätt punkt som är ogiltig eller sämre än den
-%      bästa: gå halvvägs mellan den bästa punkten och närmaste mätta
-%      granne på den sida som lutningen i den bästa punkten pekar mot.
-%      Ligger de redan närmare än dMin*alphaMax: stopp.
-%   6. Stopp när lutningen i den bästa punkten är liten, |S| <= c*|S0|,
-%      eller polynomets maximum ligger nära en mätt punkt med liten lutning
-%      (båda tidigast efter minEvals punkter), när maximum är den bästa
-%      punkten, eller efter maxEvals punkter.
-% Returnerar den giltiga punkten med störst uppmätt F (alpha = 0 om ingen
-% punkt var bättre än startpunkten).
+%   0. Är dF/dalpha(0) <= 0 pekar d inte uppåt: returnera startpunkten.
+%   1. Övre gräns alphaMax: opts.alphaMax, och högst 0.99*steget till
+%      första undre gränsen i opts.xLbd (längre steg ger negativ varians,
+%      dvs. komplext F, som sparas som NaN). Första punkten från
+%      initial_step_length, i [alphaMin, alphaMax].
+%   2. Ogiltig punkt, eller ingen förbättring, bortom den bästa punkten:
+%      ny alphaMax.
+%   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10.
+%   4. Annars: ML-polynom (select_poly_degree) genom de giltiga punkterna
+%      i [0, alphaMax]; nästa punkt är polynomets maximum (find_step_length).
+%   5. Hamnar maximum på en redan mätt, sämre punkt: gå halvvägs mot
+%      grannen på den sida lutningen i bästa punkten pekar mot.
+%   6. Stopp när
+%        - lutningen i bästa punkten är liten, |S| <= c*|S0|, eller
+%          maximum ligger nära en mätt punkt med liten lutning
+%          (båda tidigast efter minEvals punkter),
+%        - maximum är den bästa punkten,
+%        - bästa punkten och grannen i 5 ligger närmare än dMin*alphaMax,
+%        - maxEvals punkter är utvärderade.
+% Returnerar den giltiga punkten med störst F (alpha = 0 om ingen var
+% bättre än startpunkten).
 %
-% Skriver en tabellrad per punkt: alpha, uppmätt F-F0 och dF/dalpha (eller
-% komplex/NaN/Inf), polynomets grad, nästa alpha och varför ('krymp /10',
-% 'polynomets max', 'halvvägs', 'stopp'). Sist varför sökningen stoppade
-% och vilken punkt som valdes.
+% Utskrift: en tabellrad per punkt (alpha, F-F0, dF/dalpha, grad, nästa
+% alpha, varför), sist varför sökningen stoppade och vilken punkt som valdes.
 %
 % evals: en kolumn per giltig punkt, startpunkten först. Ogiltiga punkter
 % (NaN/Inf/komplex) tas bort innan evals returneras, eftersom denoise
@@ -68,7 +64,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         alphaBound = max_feasible_step(x, d, opts.xLbd);
         alphaMax = min(alphaMax, alphaBound);
     end
-    alphaNew = initial_step_length(g, d, alphaMax, opts.alphaMin);   % första punkten
+    alphaNew = initial_step_length(g, d, alphaMax);              % första punkten
+    alphaNew = min(max(alphaNew, opts.alphaMin), alphaMax);      % i [alphaMin, alphaMax]
     S0 = g'*d;                   % startlutning
     stop = false;
 
@@ -81,8 +78,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     fprintf('    %2s  %-9s  %-10s  %-10s  %4s  %-9s  %s\n', ...
             'nr', 'alpha', 'F-F0', 'dF/dalpha', 'grad', 'nästa', 'varför');
 
-    % d är ingen uppåtriktning: inget steg längs d kan förväntas ge högre F,
-    % så ingen Kalman-körning görs och startpunkten returneras
+    % Inget steg längs d kan ge högre F: hoppa över loopen och returnera
+    % startpunkten
     nLoop = opts.maxEvals;
     if ~(S0 > 0)
         nLoop = 0;
@@ -96,8 +93,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 
     for k = 1:nLoop
         [fTry, gTry] = kalmanObj(x + alphaNew*d, K, mu, varInd);
-        % Komplext F (en varians har blivit negativ, log i barriärtermen)
-        % sparas som NaN, så att evals.F förblir reell
+        % Komplext F (negativ varians i barriärtermens log) sparas som NaN
         isComplex = any(imag(fTry) ~= 0) || any(imag(gTry) ~= 0);
         if isComplex
             fTry = NaN;  gTry = NaN(size(gTry));
@@ -107,8 +103,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         evals.X(:, end+1) = x + alphaNew*d;  evals.F(end+1) = fTry;  evals.G(:, end+1) = gTry;
         evals.Q(end+1) = NaN;  evals.AHat(end+1) = NaN;
         alphas(end+1) = alphaNew; %#ok<AGROW>
-        % Raden avslutas när nästa steg är känt (print_rest). Början skrivs
-        % redan här så att punkten syns även om anpassningen kraschar.
+        % Första halvan av tabellraden skrivs nu, så att punkten syns även om
+        % anpassningen kraschar; print_rest avslutar raden.
         if isComplex
             fprintf('    %2d  %.3e  %-10s  %-10s', k, alphaNew, 'komplex', '');
         elseif ~(isfinite(fTry) && all(isfinite(gTry)))
@@ -123,7 +119,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         alphaBest = alphas(okIdx(iBest));        % 0 om ingen förbättring
         improved = fBest > f;
 
-        % Punkt utan förbättring bortom den bästa punkten: ny övre gräns
+        % Ogiltig punkt, eller ingen förbättring, bortom bästa punkten:
+        % ny övre gräns
         if ~(ok(end) && fTry > f) && alphaNew > alphaBest
             alphaMax = min(alphaMax, alphaNew);
         end
@@ -136,8 +133,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             continue
         end
 
-        % Stopp: den uppmätta lutningen i den bästa punkten är liten
-        % (först när minst minEvals nya punkter är utvärderade)
+        % Stopp: liten lutning i bästa punkten (tidigast efter minEvals punkter)
         sBest = evals.G(:, okIdx(iBest))'*d;
         if k >= opts.minEvals && abs(sBest) <= opts.c*abs(S0)
             evals.reason = sprintf('lutningen i bästa punkten alpha = %.3g är liten, |dF/dalpha| <= %.2g*|dF/dalpha(0)|', ...
@@ -147,11 +143,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             break
         end
 
-        % ML-polynom i t = alpha/alphaMax till de giltiga punkterna i
-        % [0, alphaMax] (även de med sämre F än F0). Punkter längre ut tas
-        % inte med: de ligger ofta tiopotenser bort, och ett polynom kan inte
-        % följa både dem och toppen nära 0. Skalningen behövs när stegen
-        % ligger på mycket olika skalor.
+        % ML-polynom i t = alpha/alphaMax genom alla giltiga punkter i
+        % [0, alphaMax], även de sämre än F0. Punkter bortom alphaMax tas inte
+        % med: de ligger ofta tiopotenser bort, och polynomet kan inte följa
+        % både dem och toppen nära 0.
         inFit = ok & alphas <= alphaMax*(1 + 1e-12);
         t = alphas(inFit)/alphaMax;
         St = alphaMax*(evals.G(:, inFit)'*d);    % lutning dF/dt
@@ -161,11 +156,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         alphaHat = tHat*alphaMax;
         evals.AHat(end) = alphaHat;
 
-        % Stopp: polynomets maximum ligger vid en punkt vi redan har mätt,
-        % och den uppmätta lutningen där är liten
-        [dist, i] = min(abs(alphaHat - alphas));
+        % Stopp: maximum ligger nära en mätt punkt med liten lutning
+        % (tidigast efter minEvals punkter)
+        [dist, i] = min(abs(alphaHat - alphas));     % närmaste mätta punkt
         slope = evals.G(:, i)'*d;
-        % (först när minst minEvals nya punkter är utvärderade)
         if k >= opts.minEvals && dist < opts.dMin*alphaMax && ok(i) && abs(slope) <= opts.c*abs(S0)
             evals.reason = sprintf('polynomets max ligger nära alpha = %.3g, där |dF/dalpha| <= %.2g*|dF/dalpha(0)|', ...
                                    alphas(i), opts.c);
@@ -173,14 +167,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             stop = true;
             break
         end
-        % Förslaget är exakt en punkt vi redan har mätt, och den punkten är
-        % ogiltig (NaN/komplex) eller sämre än den bästa. Polynomet ser inte
-        % den punkten (den ligger på gränsen alphaMax eller är ogiltig), så
-        % gå halvvägs mellan den bästa punkten och närmaste utvärderade
-        % punkt på den sida där den uppmätta lutningen i den bästa punkten
-        % säger att maximum ligger (positiv: höger, annars vänster). Den nya
-        % punkten ligger då mellan två mätta grannar och är aldrig redan
-        % utvärderad.
+        % Maximum är exakt en mätt punkt som är ogiltig eller sämre än den
+        % bästa (typiskt alphaMax själv). Gå i stället halvvägs från bästa
+        % punkten mot närmaste mätta granne åt det håll lutningen där pekar
+        % (positiv: höger, annars vänster). Den punkten är alltid ny.
         if dist <= 1e-12*alphaHat && i ~= okIdx(iBest)
             if sBest > 0
                 neighbour = min(alphas(alphas > alphaBest));
@@ -190,8 +180,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             else
                 neighbour = max(alphas(alphas < alphaBest));
             end
-            % Stopp: den bästa punkten och grannen ligger redan närmare än
-            % dMin*alphaMax (t.ex. när F ökar ända fram till en variansgräns)
+            % Stopp: bästa punkten och grannen ligger närmare än dMin*alphaMax
+            % (t.ex. när F ökar ända fram till en variansgräns)
             if abs(neighbour - alphaBest) < opts.dMin*alphaMax
                 evals.reason = sprintf(['maximum inringat mellan alpha = %.4g och %.4g ' ...
                                         '(avstånd < dMin*alphaMax)'], alphaBest, neighbour);
@@ -204,9 +194,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             print_rest(q, alphaNew, 'halvvägs');
             continue
         end
-        % Förslaget är exakt den bästa punkten (men lutningen där är inte
-        % liten). kalmanObj är deterministisk, så en ny körning där ger
-        % samma värden och polynomet ändras inte.
+        % Stopp: maximum är exakt bästa punkten. kalmanObj är deterministisk,
+        % så en ny körning där ger inget nytt.
         if dist <= 1e-12*alphaHat
             evals.reason = sprintf('polynomets max är den bästa punkten alpha = %.3g, redan utvärderad', alphaHat);
             print_rest(q, [], 'stopp');

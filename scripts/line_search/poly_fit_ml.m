@@ -85,7 +85,8 @@ function fit = poly_fit_ml(alpha, F, S, q)
         fprintf('    poly_fit_ml: grad %d konvergerade inte på %d iterationer\n', q, maxIter);
     end
 
-    % Slutlig skattning med de slutliga vikterna
+    % Sista y i loopen skattades med föregående vikter: skatta om med de
+    % slutliga
     y = [sqrt(wF)*a; sqrt(wG)*b] \ [sqrt(wF)*F; sqrt(wG)*S];
     rF = F - a*y;
     rG = S - b*y;

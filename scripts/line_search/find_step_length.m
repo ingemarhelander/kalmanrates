@@ -8,7 +8,8 @@ function alphaNew = find_step_length(fit, h, alphaMax)
 %
 % In:   fit       ML-anpassningen (från select_poly_degree)
 %       h         steglängd längs polynomet
-%       alphaMax  längsta tillåtna steg
+%       alphaMax  längsta tillåtna steg (1 från line_search_main, som
+%                 anpassar i t = alpha/alphaMax)
 % Ut:   alphaNew  nästa steglängd att köra kalmanObj i
 
     steps = min((1:ceil(alphaMax/h))*h, alphaMax);
