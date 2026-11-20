@@ -1,18 +1,24 @@
-function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, opts)
+function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, opts, denoise)
 % line_search_main - Linjesökning med ML-polynom längs d.
 %
-% Samma in- och utdata som line_search.m (plus opts), så att
+% Samma in- och utdata som line_search.m (plus opts och denoise), så att
 % kalmanOptimizeMain kan välja mellan dem.
 %
+% denoise (valfri, false): true när d kommer från denoise (d_prime), false
+% när d är CG-riktningen från find_search_direction. För denoise är första
+% steget alltid alphaMax och kontrollen i 0 hoppas över.
+%
 % Gång:
-%   0. Är dF/dalpha(0) <= 0 pekar d inte uppåt: returnera startpunkten.
-%   1. alpha ligger alltid i (0, 1]. Riktningen d är redan skalad så att
-%      alpha = 1 inte går förbi någon variansgräns (find_search_direction
-%      och denoise), så här finns ingen gränskontroll. Första punkten från
-%      initial_step_length_main, i [alphaMin, 1].
+%   0. Är dF/dalpha(0) <= 0 pekar d inte uppåt: returnera startpunkten
+%      (inte för denoise).
+%   1. alpha ligger i (0, alphaMax], alphaMax = opts.alphaMax. Riktningen d
+%      är skalad så att alpha = 1 inte går förbi någon variansgräns
+%      (find_search_direction och denoise). Längre steg kan ge negativ
+%      varians, dvs. komplext F, som räknas som ogiltigt (se 2-3). Första
+%      punkten från initial_step_length_main, i [alphaMin, alphaMax].
 %   2. Ogiltig punkt (NaN/Inf/komplex), eller ingen förbättring, bortom den
-%      bästa punkten: ny övre gräns alphaMax (börjar på 1).
-%   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10.
+%      bästa punkten: ny övre gräns alphaMax.
+%   3. Ingen punkt bättre än F0 än (sämre eller ogiltig): nästa steg alphaMax/2.
 %   4. Annars: ML-polynom (select_poly_degree) genom de giltiga punkterna
 %      i [0, alphaMax]; nästa punkt är polynomets maximum (find_step_length).
 %   5. Hamnar maximum på en redan mätt, sämre punkt: gå halvvägs mot
@@ -46,28 +52,39 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   maxEvals  (20)    högsta antal kalmanObj-körningar
 %   minEvals  (1)     stoppet på liten lutning gäller först efter så många punkter
 %   alphaMin  (0.1)   kortaste första steg
+%   alphaMax  (10)    längsta tillåtna steg
 
     if nargin < 8 || isempty(opts)
         opts = struct();
     end
     opts = default_opts(opts);
+    if nargin < 9 || isempty(denoise)
+        denoise = false;
+    end
 
     evals.X = x;  evals.F = f;  evals.G = g;
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
     alphas = 0;                  % steglängd för varje kolumn i evals
-    alphaMax = 1;                % övre gräns, krymper när en punkt bortom bästa är dålig
-    alphaNew = initial_step_length_main(g, d, opts.alphaMin);   % första punkten, i [alphaMin, 1]
-    S0 = g'*d;                   % startlutning
+    alphaMax = opts.alphaMax;    % övre gräns, krymper när en punkt bortom bästa är dålig
+    alphaNew = initial_step_length_main(g, d, opts.alphaMin, alphaMax, denoise);   % i [alphaMin, alphaMax]
     stop = false;
 
-    fprintf('  Linjesökning: dF/dalpha(0) = %+.3e\n', S0);
+    S0 = g'*d;                   % uppmätt startlutning, skala för stoppvillkoren
+
+    if denoise
+        kind = 'denoise';
+    else
+        kind = 'CG';
+    end
+    fprintf('  Linjesökning (%s): dF/dalpha(0) = %+.3e\n', kind, S0);
     fprintf('    %2s  %-9s  %-10s  %-10s  %4s  %-9s  %s\n', ...
             'nr', 'alpha', 'F-F0', 'dF/dalpha', 'grad', 'nästa', 'varför');
 
     % Inget steg längs d kan ge högre F: hoppa över loopen och returnera
-    % startpunkten
+    % startpunkten. Gäller bara CG-steget: denoise-riktningen kommer från
+    % modellen, och den uppmätta lutningen är brusig, så där provas steget ändå.
     nLoop = opts.maxEvals;
-    if ~(S0 > 0)
+    if ~denoise && ~(S0 > 0)
         nLoop = 0;
         stop = true;
         evals.reason = 'dF/dalpha(0) <= 0, d är ingen uppåtriktning';
@@ -107,11 +124,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             alphaMax = min(alphaMax, alphaNew);
         end
 
-        % Ingen förbättring än: krymp steget med faktor 10
+        % Ingen förbättring än (sämre eller ogiltig/komplex punkt): halvera steget
         if ~improved
-            alphaNew = alphaMax/10;
+            alphaNew = alphaMax/2;
             evals.AHat(end) = alphaNew;
-            print_rest([], alphaNew, 'krymp /10');
+            print_rest([], alphaNew, 'krymp /2');
             continue
         end
 
@@ -251,7 +268,7 @@ function opts = default_opts(opts)
 % Fyller i standardvärden. Okända fält ger fel, så att ett felstavat eller
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
-                 'alphaMin', 0.1, 'minEvals', 1);
+                 'alphaMin', 0.1, 'alphaMax', 10, 'minEvals', 1);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));

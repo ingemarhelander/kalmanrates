@@ -1,14 +1,18 @@
-function alpha = initial_step_length_main(g, d, alphaMin)
+function alpha = initial_step_length_main(g, d, alphaMin, alphaMax, denoise)
 % initial_step_length_main - Första steget i line_search_main.
 %
-% Väljer alpha så att tangenten f + alpha*(g'*d) förutsäger ökningen
-% deltaF, begränsat till [alphaMin, 1]. alpha = 1 är alltid tillåtet,
-% eftersom riktningen d redan är skalad mot variansgränserna.
+% CG-steg: alpha så att tangenten f + alpha*(g'*d) förutsäger ökningen
+% deltaF. Denoise-steg: alphaMax (den uppmätta lutningen ska inte styra).
+% Resultatet begränsas till [alphaMin, alphaMax].
 
-    deltaF = 10;     % förutsagd ökning i första punkten
+    deltaF = 100;     % förutsagd ökning i första punkten
 
-    alpha = 1;
-    alphaObjInc = deltaF/(g'*d);
+    alpha = alphaMax;
+    if denoise
+        alphaObjInc = deltaF;
+    else
+        alphaObjInc = deltaF/(g'*d);
+    end
 
     alpha = min(alpha, alphaObjInc);
     alpha = max(alpha, alphaMin);

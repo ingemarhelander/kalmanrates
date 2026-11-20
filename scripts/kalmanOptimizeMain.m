@@ -34,7 +34,7 @@ while true
     [d, D] = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
+    [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, false);
 
     %Print and update history
     history.stepSizes(end+1, 1) = alpha;
@@ -53,7 +53,7 @@ while true
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
-            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd, true);
             print_iteration(iter, alpha, f, fNew, g, gNew);
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
@@ -124,13 +124,16 @@ function lineSearchFcn = select_line_search(config)
 
     switch lower(method)
         case 'polynomial'
-            lineSearchFcn = @(x, f, g, d, K, mu, varInd) ...
-                line_search_main(x, f, g, d, K, mu, varInd, lsOpts);
+            % isDenoise: true when d is the denoise direction d_prime
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd, isDenoise) ...
+                line_search_main(x, f, g, d, K, mu, varInd, lsOpts, isDenoise);
         case 'backtracking'
             if ~isempty(fieldnames(lsOpts))
                 warning('ls_ options are ignored by the backtracking line search.');
             end
-            lineSearchFcn = @line_search;
+            % The backtracking line search does not use isDenoise
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd, isDenoise) ...
+                line_search(x, f, g, d, K, mu, varInd);
         otherwise
             error('Unknown lineSearch in config: %s (use polynomial or backtracking)', method);
     end
