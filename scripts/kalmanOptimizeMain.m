@@ -90,13 +90,6 @@ if ~isempty(periods.outOfSampleStart)
 end
 save_result(x, varInd, data.K, periods, history);
 
-% Full parameter vector for runCurvePipelinePlots. K is a struct here (from
-% subsetKalmanModel), so the vector is built from the parameter fields.
-parameterVector = [K.thetaF; K.Sigmav; K.Sigmaw; K.ax; K.Sigma0; K.Ef(:)];
-parameterVector(varInd) = x;
-kalmanOptimizeMainOutput.parameterVector = parameterVector;
-save(dataPath('kalmanOptimizeMainOutput.mat'), 'kalmanOptimizeMainOutput');
-
 %% ------------------------------ Functions -------------------------------
 
 function stop = fulfills_stop_criterion(g, iter, maxIter)

@@ -6,7 +6,8 @@
 % (or the last day of the data) so that kalmanOptimizeMain can filter
 % through the out-of-sample period.
 %
-% Saves K and KI in data/kalmanModel_<insample_start>_<insample_end>_<out_of_sample_end or end>.mat.
+% Saves K, KI and P (data for runCurvePipelinePlots) in
+% data/kalmanModel_<insample_start>_<insample_end>_<out_of_sample_end or end>.mat.
 % Run it once per choice of in-sample and out_of_sample_end, then run
 % kalmanOptimizeMain.
 
@@ -28,8 +29,14 @@ KI.insampleEnd = buildPeriods.insampleEnd;
 KI.pcaCutoff = outOfSampleStartDate;
 KI.buildEnd = buildPeriods.buildEnd;
 
+% What runCurvePipelinePlots needs besides K and KI, so it does not have to
+% build the model again. Kept out of KI so kalmanOptimizeMain, which loads
+% only K and KI, does not load the curves.
+P = struct('cb', cb, 'cbEffectiveDates', cbEffectiveDates, 'nSteps', nSteps, ...
+           'flgTick', flgTick, 'fH', fH);
+
 modelPath = dataPath(buildPeriods.modelFile);
-save(modelPath, 'K', 'KI', '-v7.3');
+save(modelPath, 'K', 'KI', 'P', '-v7.3');
 fprintf('Saved %s: %d days, %s to %s, PCA on days before %s\n', modelPath, K.nt, ...
         datestr(floor(KI.times(1)), 'yyyy-mm-dd'), datestr(floor(KI.times(end)), 'yyyy-mm-dd'), ...
         datestr(KI.pcaCutoff, 'yyyy-mm-dd'));
