@@ -8,7 +8,8 @@ function [q, fit, info] = select_poly_degree(alpha, F, S)
 % In:   alpha, F, S  steglängder, funktionsvärden och lutningar g'*d
 % Ut:   q     vald grad
 %       fit   ML-anpassningen för grad q (från poly_fit_ml)
-%       info  LR (ett värde per prövat steg q -> q+1), crit, qMax
+%       info  crit, qMax, m, och ett värde per prövat steg qFrom -> qTo:
+%             LR, qFrom, qTo, sigmaF och sigmaG (rader: [qFrom; qTo])
 
     qMin = 2;        % grad 1 har inget maximum
     qCap = 6;
@@ -23,11 +24,13 @@ function [q, fit, info] = select_poly_degree(alpha, F, S)
 
     q = qMin;
     fit = poly_fit_ml(alpha, F, S, q);
-    info = struct('LR', [], 'crit', crit, 'qMax', qMax);
+    info = struct('LR', [], 'qFrom', [], 'qTo', [], 'sigmaF', zeros(2, 0), ...
+                  'sigmaG', zeros(2, 0), 'crit', crit, 'qMax', qMax, 'm', m);
     while q < qMax
         % Grad q+1 går inte att bestämma (rangbrist): behåll q
         try
-            fitNext = poly_fit_ml(alpha, F, S, q + 1);
+            % Varmstart i vikterna för grad q, så att LR >= 0
+            fitNext = poly_fit_ml(alpha, F, S, q + 1, fit);
         catch err
             if strcmp(err.identifier, 'poly_fit_ml:rankDeficient')
                 break
@@ -36,6 +39,10 @@ function [q, fit, info] = select_poly_degree(alpha, F, S)
         end
         LR = lr_statistic(fit, fitNext, m);
         info.LR(end+1) = LR;
+        info.qFrom(end+1) = q;
+        info.qTo(end+1) = q + 1;
+        info.sigmaF(:, end+1) = [fit.sigmaF; fitNext.sigmaF];
+        info.sigmaG(:, end+1) = [fit.sigmaG; fitNext.sigmaG];
         if LR <= crit
             break                    % q+1 är inte signifikant bättre
         end
