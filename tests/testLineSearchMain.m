@@ -215,7 +215,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function neverStepsPastAlphaMax(testCase)
             % F ökar fram till alpha = 30, men steget får aldrig bli längre
-            % än alphaMax (1 i runQuiet, eller 10).
+            % än alphaMax (1 i runQuiet, eller 5).
             K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
             [f0, g0] = K([0; 0]);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
@@ -223,10 +223,10 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyLessThanOrEqual(max(evals.A), 1);
             testCase.verifyEqual(alpha, 1);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
-                                               struct('alphaMin', 0.1, 'alphaMax', 10));
-            testCase.verifyEqual(evals.A(2), 10);   % 100/0.6 > 10
-            testCase.verifyLessThanOrEqual(max(evals.A), 10);
-            testCase.verifyEqual(alpha, 10);
+                                               struct('alphaMin', 0.1, 'alphaMax', 5));
+            testCase.verifyEqual(evals.A(2), 5);    % 100/0.6 > 5
+            testCase.verifyLessThanOrEqual(max(evals.A), 5);
+            testCase.verifyEqual(alpha, 5);
         end
 
         function halvingFollowsSlopeAtBest(testCase)

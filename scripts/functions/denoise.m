@@ -1,5 +1,9 @@
-function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights)
+function [d_prime, f_prime, g_prime] = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights)
 % Placeholder: returns x, f, g unchanged.
+    % Model value and gradient; stay NaN if the model cannot be determined
+    % (the early returns below), so the outputs are always assigned.
+    f_prime = NaN;
+    g_prime = NaN(size(x));
     B = orth(B);  % Ensure B is orthonormal
     columnNorms = sqrt(sum(abs(B).^2, 1));
 
@@ -26,8 +30,8 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     end
     % Eval j corresponds to X(:,j), F(j) and G(:,j)
 
-    fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
-        mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
+    %fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
+    %    mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
     [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
         X, F, G, B, config.fixed_or_exact, weights);
@@ -58,6 +62,18 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     if alphaLbdMin < 1
         d_prime = d_prime * alphaLbdMin * 0.99;
     end
+    f_prime = c;
+    g_prime = q;
+
+    % Largest step length (along d) before each variable hits its lower bound
+    alphaLbd = ones(size(x))*inf;
+    hitsBound = (d_prime < 0) & (xLbd ~= -inf);
+    alphaLbd(hitsBound) = -(x(hitsBound) - xLbd(hitsBound)) ./ d_prime(hitsBound);
+
+    alphaLbdMin = min(alphaLbd);
+    if alphaLbdMin < 1
+        d_prime = d_prime * alphaLbdMin * 0.99;   % Ensures that alpha = 1 is feasible
+    end
 end
 
 
@@ -65,16 +81,16 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method,
 % Project X and G onto the span of B to get a smaller problem.
     Z = B' * X;
     Gsmall = B' * G;
-    fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
-        mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
+    %fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
+    %    mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
     %Call the function that computes the quadratic approximation.
     [Qsmall, qsmall, c, esmall, ok] = compute_quadratic_approximation( ...
         Z, F, Gsmall, method, weights);
 
 
-    fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
-        mat2str(size(Qsmall)), mat2str(size(qsmall)), mat2str(size(c)), mat2str(size(esmall)));
+    %fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
+    %    mat2str(size(Qsmall)), mat2str(size(qsmall)), mat2str(size(c)), mat2str(size(esmall)));
 
     % Transform the small quadratic model back to the original space.
     Q = B * Qsmall * B';

@@ -8,11 +8,7 @@ function alpha = initial_step_length_main(g, d, alphaMin, alphaMax, denoise)
     deltaF = 100;     % förutsagd ökning i första punkten
 
     alpha = alphaMax;
-    if denoise
-        alphaObjInc = deltaF;
-    else
-        alphaObjInc = deltaF/(g'*d);
-    end
+    alphaObjInc = deltaF/(g'*d);
 
     alpha = min(alpha, alphaObjInc);
     alpha = max(alpha, alphaMin);

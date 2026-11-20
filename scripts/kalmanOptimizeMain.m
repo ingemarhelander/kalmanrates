@@ -27,6 +27,13 @@ evalHist = {};   % History of line search evaluations
 iter = 1;
 stalls = 0;      % Consecutive iterations where x did not change
 
+% Inputs to denoise except x, f, g. Also passed to the line search for the
+% denoise step. B and evalHist are updated before each denoise call.
+denoise_struct = struct('noisy_size', noisy_size, 'K', K, 'mu', mu, 'varInd', varInd, ...
+                        'xLbd', xLbd, 'config', config, 'weights', weights);
+denoise_struct.B = [];
+denoise_struct.evalHist = {};   % set by field, since struct() would split a cell
+
 while true
     history = update_history(history, x, f, g);
 
@@ -34,7 +41,7 @@ while true
     [d, D] = find_search_direction(x, g, xLbd, D);
 
     %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, false);
+    [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, []);   % [] = CG step
 
     %Print and update history
     history.stepSizes(end+1, 1) = alpha;
@@ -49,11 +56,13 @@ while true
         print_iteration(iter, alpha, f, fNew, g, gNew);
         [x, f, g] = update_step(xNew, fNew, gNew);
     elseif size(D, 2) >= noisy_size
-        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
+        denoise_struct.B = B;
+        denoise_struct.evalHist = evalHist;
+        [d_prime, f_prime, g_prime] = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
-            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd, true);
+            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd, denoise_struct);
             print_iteration(iter, alpha, f, fNew, g, gNew);
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
@@ -124,15 +133,15 @@ function lineSearchFcn = select_line_search(config)
 
     switch lower(method)
         case 'polynomial'
-            % isDenoise: true when d is the denoise direction d_prime
-            lineSearchFcn = @(x, f, g, d, K, mu, varInd, isDenoise) ...
-                line_search_main(x, f, g, d, K, mu, varInd, lsOpts, isDenoise);
+            % denoise_struct: the denoise inputs for the denoise step, [] for CG
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd, denoise_struct) ...
+                line_search_main(x, f, g, d, K, mu, varInd, lsOpts, denoise_struct);
         case 'backtracking'
             if ~isempty(fieldnames(lsOpts))
                 warning('ls_ options are ignored by the backtracking line search.');
             end
-            % The backtracking line search does not use isDenoise
-            lineSearchFcn = @(x, f, g, d, K, mu, varInd, isDenoise) ...
+            % The backtracking line search does not use denoise_struct
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd, denoise_struct) ...
                 line_search(x, f, g, d, K, mu, varInd);
         otherwise
             error('Unknown lineSearch in config: %s (use polynomial or backtracking)', method);
