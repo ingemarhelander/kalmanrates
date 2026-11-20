@@ -37,34 +37,31 @@ while true
     [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
 
     %Print and update history
-    print_iteration(iter, alpha, f, fNew, g, gNew);
     history.stepSizes(end+1, 1) = alpha;
     evalHist = store_evals(evalHist, evals, noisy_size);
 
-    %Iteration done, update counter and x f and g
-    xStart = x;
-    [x, f, g] = update_step(xNew, fNew, gNew);
-    iter = iter + 1;
-
-    %Check if current step fulfills stop criterion.
-    if fulfills_stop_criterion(g, iter, maxIter)
-        break;
-    end
-    
     %Make sure the last n search direction is stored as a base B and run noisy optimization
     [D, B] = store_direction(D, d, noisy_size);
-    if size(D, 2) >= noisy_size
+
+    %Iteration done, update counter and x f and g
+    xStart = x;
+    if size(D, 2) < noisy_size
+        print_iteration(iter, alpha, f, fNew, g, gNew);
+        [x, f, g] = update_step(xNew, fNew, gNew);
+    elseif size(D, 2) >= noisy_size
         d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+            print_iteration(iter, alpha, f, fNew, g, gNew);
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
         end
         fprintf('Denoising done \n')
     end
-
+    
+    iter = iter + 1;
 
     % Stop if x has not changed in 3 consecutive iterations
     if isequal(x, xStart)
@@ -141,7 +138,7 @@ function lineSearchFcn = select_line_search(config, xLbd)
 end
 
 function print_iteration(iter, alpha, f, fNew, g, gNew)
-    fprintf('Main loop iteration %3d: alpha = %.4e, fNew-fPrev = %+.4e, fNew = %.6f, |gPrev| = %.4e, |gNew| = %.4e\n', ...
+    fprintf('\nMain loop iteration %3d: alpha = %.4e, fNew-fPrev = %+.4e, fNew = %.6f, |gPrev| = %.4e, |gNew| = %.4e\n\n', ...
             iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
 end
 
