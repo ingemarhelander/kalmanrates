@@ -159,31 +159,33 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function firstStepFromInitialStepLength(testCase)
             % Första steget är deltaF/(g'*d) = 100/S0, begränsat till
-            % [alphaMin, alphaMax].
+            % [alphaMin, 1].
             K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 0.6 längs d = [1; 0]
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
-                                           struct('alphaMax', 20, 'alphaMin', 0.1));
-            testCase.verifyEqual(evals.A(2), 20);   % 100/0.6 > 20
+                                           struct('alphaMin', 0.1));
+            testCase.verifyEqual(evals.A(2), 1);    % 100/0.6 > 1
             K = @(x) deal(-1e3*(x(1) - 1)^2, [-2e3*(x(1) - 1); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 2000
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
-                                           struct('alphaMax', 20, 'alphaMin', 0.1));
+                                           struct('alphaMin', 1e-3));
+            testCase.verifyEqual(evals.A(2), 0.05, 'AbsTol', 1e-15);  % 100/2000
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
+                                           struct('alphaMin', 0.1));
             testCase.verifyEqual(evals.A(2), 0.1);  % 100/2000 < alphaMin
         end
 
         function complexValuesAreInvalid(testCase)
-            % Ett för långt steg ger log av ett negativt tal.
-            % Sådana punkter ska sparas som NaN, inte bli förbättringar.
-            % Startlutning 4.5, så första steget blir alphaMax = 20.
-            Kd = @(x) deal(log(2 - x(1)) - 0.1*x(1)^2 + 5*x(1), [-1/(2 - x(1)) - 0.2*x(1) + 5; 0]);
+            % Ett för långt steg ger log av ett negativt tal (gränsen ligger
+            % vid alpha = 0.5). Sådana punkter ska sparas som NaN, inte bli
+            % förbättringar. Startlutning 3, så första steget blir 1.
+            Kd = @(x) deal(log(0.5 - x(1)) - 0.1*x(1)^2 + 5*x(1), [-1/(0.5 - x(1)) - 0.2*x(1) + 5; 0]);
             [f0, g0] = Kd([0; 0]);
-            [~, ~, fNew, gNew, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kd, ...
-                                                 struct('alphaMax', 20, 'alphaMin', 0.1));
+            [~, ~, fNew, gNew, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kd);
             testCase.verifyTrue(isreal(fNew) && isreal(gNew));
             testCase.verifyGreaterThan(fNew, f0);
-            % alpha = 20 gav komplext F och är borttagen ur evals
-            testCase.verifyFalse(any(evals.A == 20));
+            % alpha = 1 gav komplext F och är borttagen ur evals
+            testCase.verifyFalse(any(evals.A == 1));
             testCase.verifyTrue(isreal(evals.F) && all(isfinite(evals.F)));
         end
 
@@ -200,48 +202,25 @@ classdef testLineSearchMain < matlab.unittest.TestCase
         end
 
         function repeatedInvalidProposalGoesHalfway(testCase)
-            % F ökar ända fram till gränsen alpha = 2 (log(2 - alpha)), med
-            % maximum vid alpha ~ 1.8. Efter krympningen till 0.2 föreslår
-            % polynomet gränsen igen. Sökningen ska gå halvvägs mot den i
-            % stället för att stoppa vid 0.2.
-            Kd = @(x) deal(log(2 - x(1)) - 0.1*x(1)^2 + 5*x(1), [-1/(2 - x(1)) - 0.2*x(1) + 5; 0]);
+            % F ökar fram till maximum vid alpha ~ 0.8, och gränsen ligger
+            % vid alpha = 1 (log(1 - alpha) = -Inf där). Efter krympningen
+            % till 0.1 föreslår polynomet gränsen igen. Sökningen ska gå
+            % halvvägs mot den i stället för att stoppa vid 0.1.
+            Kd = @(x) deal(log(1 - x(1)) - 0.1*x(1)^2 + 5*x(1), [-1/(1 - x(1)) - 0.2*x(1) + 5; 0]);
             [f0, g0] = Kd([0; 0]);
-            [alpha, ~, fNew] = runQuiet([0; 0], f0, g0, [1; 0], Kd, ...
-                                        struct('alphaMax', 20, 'alphaMin', 0.1));
-            testCase.verifyGreaterThan(alpha, 1);
+            [alpha, ~, fNew] = runQuiet([0; 0], f0, g0, [1; 0], Kd);
+            testCase.verifyGreaterThan(alpha, 0.5);
             testCase.verifyGreaterThan(fNew, f0);
         end
 
-        function lowerBoundCapsAlphaMax(testCase)
-            % x1 >= 0 vid x1 = 3 och d = [-1; 0]: gränsen ligger vid alpha = 3.
-            % F ökar fram till gränsen (log-barriär med svag vikt), så utan
-            % gräns skulle sökningen prova steg förbi den och få komplext F.
-            K = @(x) deal(-x(1) + 0.01*log(x(1)), [-1 + 0.01/x(1); 0]);
-            [f0, g0] = K([3; 0]);
-            [~, ~, fNew, ~, evals] = runQuiet([3; 0], f0, g0, [-1; 0], K, ...
-                                              struct('alphaMax', 20, 'alphaMin', 0.1, 'xLbd', [0; -Inf]));
-            testCase.verifyLessThanOrEqual(max(evals.A), 0.99*3 + 1e-12);
-            testCase.verifyGreaterThan(fNew, f0);
-            testCase.verifyFalse(contains(evals.reason, 'ogiltig'));
-        end
-
-        function noBoundNearKeepsAlphaMax(testCase)
-            % Ingen variabel minskar längs d: alphaMax förblir 20.
+        function neverStepsPastOne(testCase)
+            % F ökar långt bortom alpha = 1, men steget får aldrig bli längre.
             K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
-            [f0, g0] = K([1; 0]);
-            [~, ~, ~, ~, evals] = runQuiet([1; 0], f0, g0, [1; 0], K, ...
-                                           struct('alphaMax', 20, 'alphaMin', 0.1, 'xLbd', [0; -Inf]));
-            testCase.verifyEqual(evals.A(2), 20);
-        end
-
-        function variableAtBoundDoesNothing(testCase)
-            % x1 = 0 ligger på gränsen och d pekar nedåt: alphaMax = 0.
-            K = @(x) deal(-x(1), [-1; 1]);
             [f0, g0] = K([0; 0]);
-            [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [-1; 1], K, ...
-                                               struct('alphaMax', 20, 'alphaMin', 0.1, 'xLbd', [0; -Inf]));
-            testCase.verifyEqual(alpha, 0);
-            testCase.verifyEqual(numel(evals.A), 1);
+            [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
+                                               struct('alphaMin', 0.1));
+            testCase.verifyLessThanOrEqual(max(evals.A), 1);
+            testCase.verifyEqual(alpha, 1);
         end
 
         function halvingFollowsSlopeAtBest(testCase)
@@ -250,7 +229,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             Kb = @(x) deal(10*x(1) + 0.01*log(1 - x(1)), [10 - 0.01/(1 - x(1)); 0]);
             [f0, g0] = Kb([0; 0]);
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kb, ...
-                                           struct('alphaMax', 20, 'alphaMin', 0.1, 'dMin', 1e-3));
+                                           struct('alphaMin', 0.1, 'dMin', 1e-3));
             % Lutningen är positiv ända fram till 0.999, så alla giltiga
             % punkter efter den första ska ligga till höger om den bästa före
             A = evals.A(2:end);
@@ -266,11 +245,11 @@ classdef testLineSearchMain < matlab.unittest.TestCase
         function halvingStopsAtBoundary(testCase)
             % F ökar ända fram till gränsen alpha = 1 (log(1 - alpha) ger
             % komplext F bortom). Halveringen mot gränsen ska stoppa när
-            % intervallet är mindre än dMin*alphaMax, inte gå till maxEvals.
+            % intervallet är mindre än dMin (alphaMax = 1), inte gå till maxEvals.
             Kb = @(x) deal(10*x(1) + 0.01*log(1 - x(1)), [10 - 0.01/(1 - x(1)); 0]);
             [f0, g0] = Kb([0; 0]);
             [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kb, ...
-                                                  struct('alphaMax', 20, 'alphaMin', 0.1, 'dMin', 1e-3));
+                                                  struct('alphaMin', 0.1, 'dMin', 1e-3));
             testCase.verifyTrue(contains(evals.reason, 'inringat'), evals.reason);
             testCase.verifyGreaterThan(alpha, 0.99);
             testCase.verifyGreaterThan(fNew, f0);
@@ -281,6 +260,10 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
             testCase.verifyError(@() runQuiet([0; 0], f0, g0, [2; 0.5], K, struct('minPoints', 5)), ?MException);
+            % alphaMax och xLbd finns inte längre: taket är 1 och d är redan
+            % skalad mot variansgränserna.
+            testCase.verifyError(@() runQuiet([0; 0], f0, g0, [2; 0.5], K, struct('alphaMax', 5)), ?MException);
+            testCase.verifyError(@() runQuiet([0; 0], f0, g0, [2; 0.5], K, struct('xLbd', [0; 0])), ?MException);
         end
     end
 end
@@ -316,12 +299,11 @@ end
 
 function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, opts)
 % line_search_main utan utskrifter.
-% Om inget annat anges är första steget alpha = 1 och alphaMax = 1, så att
+% Om inget annat anges är alphaMin = 1, så första steget blir alpha = 1 och
 % testerna ovan inte beror på initial_step_length.
     if nargin < 6
         opts = struct();
     end
-    if ~isfield(opts, 'alphaMax'), opts.alphaMax = 1; end
     if ~isfield(opts, 'alphaMin'), opts.alphaMin = 1; end
     alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
     evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts);');

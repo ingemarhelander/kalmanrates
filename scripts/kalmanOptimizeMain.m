@@ -18,7 +18,7 @@ noisy_size = config.noisy_size; % Dimension of noisy subspace
 periods = experimentPeriods(config); % In-sample, optimization and out-of-sample periods
 
 [K, varInd, xLbd, x, data] = setup_problem(periods);
-lineSearchFcn = select_line_search(config, xLbd); % Line search method and its options
+lineSearchFcn = select_line_search(config); % Line search method and its options
 [f, g] = kalmanObj(x, K, mu, varInd);
 history = init_history(x);
 D = [];           % All orthogonal search directions 
@@ -102,11 +102,12 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
     end
 end
 
-function lineSearchFcn = select_line_search(config, xLbd)
+function lineSearchFcn = select_line_search(config)
 % Returns the line search chosen by config.lineSearch (default polynomial).
 % Keys beginning with ls_ are passed, without the prefix, as options to the
-% polynomial line search (see line_search_main). The lower bounds xLbd are
-% passed too, so that no step goes past the first variance bound along d.
+% polynomial line search (see line_search_main). The variance bounds are
+% handled by find_search_direction and denoise, which scale d so that
+% alpha = 1 is feasible.
 
     method = 'polynomial';
     if isfield(config, 'lineSearch')
@@ -123,7 +124,6 @@ function lineSearchFcn = select_line_search(config, xLbd)
 
     switch lower(method)
         case 'polynomial'
-            lsOpts.xLbd = xLbd;
             lineSearchFcn = @(x, f, g, d, K, mu, varInd) ...
                 line_search_main(x, f, g, d, K, mu, varInd, lsOpts);
         case 'backtracking'
