@@ -59,12 +59,13 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = opts.alphaMax;    % övre gräns: längsta tillåtna steg
+    alphaMin = opts.alphaMin;
     alphaBound = Inf;            % 0.99 * steget till första undre gränsen
     if ~isempty(opts.xLbd)
         alphaBound = max_feasible_step(x, d, opts.xLbd);
         alphaMax = min(alphaMax, alphaBound);
     end
-    alphaNew = initial_step_length(g, d, alphaMax);              % första punkten
+    alphaNew = initial_step_length_main(g, d, alphaMax , alphaMin);              % första punkten
     alphaNew = min(max(alphaNew, opts.alphaMin), alphaMax);      % i [alphaMin, alphaMax]
     S0 = g'*d;                   % startlutning
     stop = false;
