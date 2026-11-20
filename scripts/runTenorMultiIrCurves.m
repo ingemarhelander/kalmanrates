@@ -17,9 +17,15 @@ fileName = currency;
 % fileName = 'EUR_EONIA';
 % fileName = 'irsTickEUREONSW=20200203_20200203frq1s';
 
-pp = gcp;
-parfor ix = 1:pp.NumWorkers % Ensure that mexPortfolio is started and loaded with data on each worker
-  [pl, times, ric, assetID, assetType, assetTenor, currencies] = populatePortfolioWithData(fileName, mi.currency, mi.currencyTimeZone, mi.iborTimeZone);
+% With Parallel Computing Toolbox the parfor loop below runs on a pool of
+% workers. Without it parfor runs as an ordinary loop, so no pool is needed.
+if ~isempty(ver('parallel')) && license('test', 'Distrib_Computing_Toolbox')
+  pp = gcp;
+  parfor ix = 1:pp.NumWorkers % Ensure that mexPortfolio is started and loaded with data on each worker
+    [pl, times, ric, assetID, assetType, assetTenor, currencies] = populatePortfolioWithData(fileName, mi.currency, mi.currencyTimeZone, mi.iborTimeZone);
+  end
+else
+  fprintf('Parallel Computing Toolbox not available: the curves are computed one day at a time.\n');
 end
 [pl, times, ric, assetID, assetType, assetTenor, currencies] = populatePortfolioWithData(fileName, mi.currency, mi.currencyTimeZone, mi.iborTimeZone);
 

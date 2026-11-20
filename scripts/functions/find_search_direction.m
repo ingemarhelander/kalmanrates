@@ -1,4 +1,4 @@
-function d = find_search_direction(x, g, xLbd, D)
+function [d, D] = find_search_direction(x, g, xLbd, D)
 % find_search-direction Computes an orthonormalised search direction 
 % using a modified conjugate gradient / Gram-Schmidt approach.
 
@@ -6,38 +6,54 @@ function d = find_search_direction(x, g, xLbd, D)
     d = g;
     
     if isempty(D)
-        % Första iterationen: Gradienten väljs som initial sökriktning
+        % First iteration: use normed gradient as first serach direction
         norm_d = norm(d);
         if norm_d > 0
             d = d / norm_d;
         end
-        fprintf('[find_search_direction] Använder normaliserad gradient som initial sökriktning.\n');
+        fprintf('[find_search_direction] Using normalized gradient as initial search direction.\n');
     else
         % 2. Orthonormalisation
-        % Gram-Schmidt ortogonalisering mot alla tidigare riktningar
-        fprintf('[find_search_direction] Utför Gram-Schmidt mot %d tidigare riktning(ar)...\n', size(D, 2));
-        % Kolumnerna i D är skalade mot gränserna och inte ortonormala,
-        % så projicera mot en ortonormal bas för span(D)
+        % Gram-Schmidt
+        fprintf('[find_search_direction]Performing Gram-Schmidt against %d previous direction(s)...\n', size(D, 2));
         U = orth(D);
         d = d - U * (U' * d);
         
-        % Normalisera den nya riktningen för att säkerställa att den är ortonormal
+        % Orthogonalisation check
+        orth_error = max(abs(U' * d));
+        fprintf('[find_search_direction] [CHECK] Max orthogonalisation error (U''*d): %.3e\n', orth_error);
+        if orth_error > 1e-6
+            fprintf('[find_search_direction] WARNING: Bad orthogonalisation found!\n');
+        end
+
+        % Normalising new search direction
         norm_d = norm(d);
         if norm_d > 1e-10 * norm(g)
             d = d / norm_d;
-            fprintf('[find_search_direction] Riktning framgångsrikt ortogonaliserad och normaliserad.\n');
+           
+            % Normaliseing check
+            final_norm = norm(d);
+            fprintf('[find_search_direction] [CHECK] Final norm after normalisation: %.6f (should be 1.0)\n', final_norm);
+            if abs(final_norm - 1.0) > 1e-6
+                fprintf('[find_search_direction] WARNING: Normalisation failed!\n');
+            end
+
+            fprintf('[find_search_direction] Direction sucessfullly orthonormalised.\n');
         else
-            fprintf('[find_search_direction] VARNING: Gradienten ryms helt i tidigare sökriktningar.\n');
-            d = g; 
+            fprintf('[find_search_direction] WARNING: Gradient aldready in span(D).\n');
+            if norm(g) > 0
+               d = g / norm(g);
+               D = [];
+            end
         end
     end
 
-    % --- Originalkod för begränsningskontroll (Bounds) ---
+    % --- Bound checks ---
     
-    % Kontrollera ascent direction
+    % Check ascent direction
     ascent_check = g' * d;
     if ascent_check < 0
-        fprintf('[find_search_direction] VARNING: Detta är inte en ascent direction!\n');
+        fprintf('[find_search_direction] WARNING: This is an ascent direction!\n');
     end
 
     % Largest step length (along d) before each variable hits its lower bound
@@ -49,7 +65,7 @@ function d = find_search_direction(x, g, xLbd, D)
     if alphaLbdMin < 1
         d = d * alphaLbdMin * 0.99;   % Ensures that alpha = 1 is feasible
     end
-
+    
     if any(isnan(d))
         error('Search direction contains NaN');
     end
