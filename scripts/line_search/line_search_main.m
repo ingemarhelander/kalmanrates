@@ -46,6 +46,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   maxEvals  (20)    högsta antal kalmanObj-körningar
 %   minEvals  (1)     stoppet på liten lutning gäller först efter så många punkter
 %   alphaMin  (0.1)   kortaste första steg
+%   showDegree (0)    1: skriv gradvalet under varje tabellrad (LR för varje
+%                     prövat steg q -> q+1, sigmaF och sigmaG före och efter)
 
     if nargin < 8 || isempty(opts)
         opts = struct();
@@ -132,7 +134,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         inFit = ok & alphas <= alphaMax*(1 + 1e-12);
         t = alphas(inFit)/alphaMax;
         St = alphaMax*(evals.G(:, inFit)'*d);    % lutning dF/dt
-        [q, fit] = select_poly_degree(t, evals.F(inFit), St);
+        [q, fit, info] = select_poly_degree(t, evals.F(inFit), St);
+        % Gradvalet under tabellraden (skrivs av print_rest) om showDegree
+        degreeLine = '';
+        if opts.showDegree
+            degreeLine = describe_degree(info);
+        end
         evals.Q(end) = q;
         tHat = find_step_length(fit, opts.h, 1);
         alphaHat = tHat*alphaMax;
@@ -145,7 +152,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         if k >= opts.minEvals && dist < opts.dMin*alphaMax && ok(i) && abs(slope) <= opts.c*abs(S0)
             evals.reason = sprintf('polynomets max ligger nära alpha = %.3g, där |dF/dalpha| <= %.2g*|dF/dalpha(0)|', ...
                                    alphas(i), opts.c);
-            print_rest(q, [], 'stopp');
+            print_rest(q, [], 'stopp', degreeLine);
             stop = true;
             break
         end
@@ -167,25 +174,25 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             if abs(neighbour - alphaBest) < opts.dMin*alphaMax
                 evals.reason = sprintf(['maximum inringat mellan alpha = %.4g och %.4g ' ...
                                         '(avstånd < dMin*alphaMax)'], alphaBest, neighbour);
-                print_rest(q, [], 'stopp');
+                print_rest(q, [], 'stopp', degreeLine);
                 stop = true;
                 break
             end
             alphaNew = (alphaBest + neighbour)/2;
             evals.AHat(end) = alphaNew;
-            print_rest(q, alphaNew, 'halvvägs');
+            print_rest(q, alphaNew, 'halvvägs', degreeLine);
             continue
         end
         % Stopp: maximum är exakt bästa punkten. kalmanObj är deterministisk,
         % så en ny körning där ger inget nytt.
         if dist <= 1e-12*alphaHat
             evals.reason = sprintf('polynomets max är den bästa punkten alpha = %.3g, redan utvärderad', alphaHat);
-            print_rest(q, [], 'stopp');
+            print_rest(q, [], 'stopp', degreeLine);
             stop = true;
             break
         end
         alphaNew = alphaHat;
-        print_rest(q, alphaNew, 'polynomets max');
+        print_rest(q, alphaNew, 'polynomets max', degreeLine);
     end
     if ~stop
         evals.reason = sprintf('maxEvals = %d punkter utvärderade', opts.maxEvals);
@@ -228,9 +235,31 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     fprintf('  Stopp efter %d %s%s: %s\n  -> %s\n', n, word, invalidNote, evals.reason, chosen);
 end
 
-function print_rest(q, alphaNext, why)
+function s = describe_degree(info)
+% Gradvalet som text, en rad per prövat steg: LR mot gränsen och sigma
+% (sigmaG i t-skala) före och efter.
+    if isempty(info.LR)
+        s = sprintf('          gradval  m = %d, qMax = %d, inget test\n', info.m, info.qMax);
+        return
+    end
+    s = sprintf('          gradval  m = %d, qMax = %d\n', info.m, info.qMax);
+    for k = 1:numel(info.LR)
+        if info.LR(k) > info.crit
+            verdict = sprintf(' > %.2f  höj   ', info.crit);
+        else
+            verdict = sprintf('<= %.2f  stanna', info.crit);
+        end
+        s = [s, sprintf('            %d->%d  LR = %7.2f %s   sF %.2e -> %.2e   sG %.2e -> %.2e\n', ...
+                        info.qFrom(k), info.qTo(k), info.LR(k), verdict, ...
+                        info.sigmaF(1, k), info.sigmaF(2, k), ...
+                        info.sigmaG(1, k), info.sigmaG(2, k))]; %#ok<AGROW>
+    end
+end
+
+function print_rest(q, alphaNext, why, degreeLine)
 % Avslutar tabellraden: polynomets grad, nästa alpha och varför.
-% Tomma q eller alphaNext skrivs som blanka.
+% Tomma q eller alphaNext skrivs som blanka. degreeLine (valfri) skrivs
+% på en egen rad under.
     qStr = '';
     if ~isempty(q)
         qStr = sprintf('%d', q);
@@ -240,6 +269,9 @@ function print_rest(q, alphaNext, why)
         nextStr = sprintf('%.3e', alphaNext);
     end
     fprintf('  %4s  %-9s  %s\n', qStr, nextStr, why);
+    if nargin >= 4
+        fprintf('%s', degreeLine);
+    end
 end
 
 function ok = valid_points(evals)
@@ -251,7 +283,7 @@ function opts = default_opts(opts)
 % Fyller i standardvärden. Okända fält ger fel, så att ett felstavat eller
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
-                 'alphaMin', 0.1, 'minEvals', 1);
+                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));

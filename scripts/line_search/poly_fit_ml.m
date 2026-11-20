@@ -1,15 +1,20 @@
-function fit = poly_fit_ml(alpha, F, S, q)
+function fit = poly_fit_ml(alpha, F, S, q, fit0)
 % poly_fit_ml - ML-anpassning av ett polynom av grad q till både
 % funktionsvärden F och lutningar S (ekv. 34, 38, 39 i ML-dokumentet).
 %
 % Bruset på F och S skattas separat. Iterationen:
-%   1. Starta med vikterna wF = wG = 1.
+%   1. Starta med vikterna wF = wG = 1, eller med vikterna i fit0.
 %   2. Skatta koefficienterna med viktad minsta kvadrat på F och S.
 %   3. Skatta sigmaF^2 och sigmaG^2 från residualerna, sätt w = 1/sigma^2.
 %   4. Upprepa 2-3 tills vikterna slutar ändras.
 %
 % In:   alpha, F, S  steglängder, funktionsvärden och lutningar g'*d (m x 1)
 %       q            polynomgrad
+%       fit0         (valfri) anpassning av lägre grad till samma punkter.
+%                    Iterationen startar i dess vikter. Varje varv höjer
+%                    likelihooden, så resultatet blir minst lika bra som
+%                    fit0 (LR >= 0) och hamnar i samma läge som fit0 i
+%                    stället för att följa F eller S beroende på graden.
 % Ut:   fit.y              koefficienter för 1, alpha, alpha^2, ... (q+1 x 1)
 %       fit.rF, fit.rG     residualer för F och S
 %       fit.sigmaF/sigmaG  skattade standardavvikelser
@@ -51,6 +56,11 @@ function fit = poly_fit_ml(alpha, F, S, q)
 
     wF = 1;
     wG = 1;
+    if nargin >= 5
+        % fit0.wG gäller lutningen i alpha; här är lutningen i t
+        wF = fit0.wF;
+        wG = fit0.wG/alphaScale^2;
+    end
     maxIter = 1000;
     tol = 1e-8;
     converged = false;
