@@ -18,6 +18,8 @@
 | **Fix required** | Ett reproducerbart problem eller misslyckat relevant test är dokumenterat. |
 | **Not implemented** | Den avsedda funktionaliteten saknas fortfarande. |
 
+Testavgränsning: Testningen fokuserar på gruppens egna implementationer, förändringar av Jörgens ursprungskod och integrationen mellan dessa. Oförändrad ursprungskod kvalitetssäkras inte från grunden.
+
 `Design pending` kan läggas som extra notering när förväntat beteende ännu inte beslutats; det ersätter inte teststatus.
 
 ## Funktionsöversikt (preliminär)
@@ -30,9 +32,8 @@
 | Likelihood ratio-baserat gradval | **In testing** | [#14](https://github.com/ingemarhelander/kalmanrates/issues/14), `testSelectPolyDegreeLr.m` | CI godkänd. Kontrollera statistiska kriterier. |
 | Brusreducering/kvadratisk approximation | **In testing** | [#2](https://github.com/ingemarhelander/kalmanrates/issues/2), `test_denoise_quadratic_approximation.m` | Tidigare CI godkänd; komplettera med fler brusnivåer och integration. |
 | Stoppkriterier i linjesökningen | **In testing** / Design pending | [#36](https://github.com/ingemarhelander/kalmanrates/issues/36), [#38](https://github.com/ingemarhelander/kalmanrates/issues/38) | Fastställ vilket beteende som ska gälla, kontrollera aktuella testfall. |
-| Modifierad CG/sökriktning | **In testing** | [#5](https://github.com/ingemarhelander/kalmanrates/issues/5), `find_search_direction.m` | Testa syntetisk kvadratisk funktion, ortogonalitet och gränser. |
+| Modifierad CG/sökriktning | **In testing** | [#5](https://github.com/ingemarhelander/kalmanrates/issues/5), `find_search_direction.m`, `testFindSearchDirection.m` (4 tester godkända i CI) | Följ upp Julianas kodstädning och komplettera vid behov med ytterligare specialfall. |
 | Föreslagen Gram–Schmidt-ändring | **Not implemented** (ändringen ej verifierad) | [#35](https://github.com/ingemarhelander/kalmanrates/issues/35) | Implementera och skapa tester för (nära) linjärt beroende. |
-| Kalmanfilter och RTS-smoothing | **In testing** | `clsKalmanIr.m`, `kalmanSub.m` | Oberoende facit för liten modell; kontrollera kovarianser. |
 | AD/MEX-gradient | **In testing** | `testAdCounts.m`, `checkMexRegression.m`, `docs/utveckling.md` | Kör på rätt Windows/MATLAB/MEX och kontrollera finit differens. |
 | Full optimeringsloop och verkliga EUR-data | **In testing** | [#18](https://github.com/ingemarhelander/kalmanrates/issues/18), `kalmanOptimizeMain.m` | Kör fler iterationer; jämför backtracking och polynomlinjesökning. |
 
@@ -71,6 +72,7 @@ En rad får byta till **Approved** när:
 | 2026-11-16 | Syntetisk linjesökning och denoising (begränsat testurval) | `61f05edf` | GitHub Actions, Ubuntu, MATLAB R2026b | [MATLAB Tests](https://github.com/ingemarhelander/kalmanrates/actions/runs/43884499822) | CI success; **inte** fullständig funktionell verifiering |
 | 2026-11-16 | Utökad MATLAB-testsvit (5 filer) | `79214cf9` | Ubuntu, MATLAB R2026b | [Godkänd CI-körning](https://github.com/ingemarhelander/kalmanrates/actions/runs/43886139997) | Passed – ytterligare systemtestning återstår |
 | 2026-11-16 | Linjesökningens stoppkriterier (`testEvaluate.m`), utökad sexfilerssvit | `84a475d` | GitHub Actions, Ubuntu, MATLAB R2026b | [Godkänd CI-körning](https://github.com/ingemarhelander/kalmanrates/actions/runs/43897123079) | Passed – direkta tester av stoppkriterierna godkända; designändring #38 återstår |
+| 2026-11-22 | Sökriktning/Gram–Schmidt (#5), fyra tester | `794a49ef` | GitHub Actions, Ubuntu, MATLAB R2026b | [CI-körning](https://github.com/ingemarhelander/kalmanrates/actions/runs/45042917181) | 4/4 tester passerade. Hela CI är röd på grund av ett separat fel i polynomgradvalet. |
 
 ## Testplan framåt, i prioritetsordning
 
