@@ -172,6 +172,58 @@ function testCollinearSamples(testCase)
     verifyEqual(testCase, d, zeros(2,1));
 end
 
+function testMultipleEvaluationHistories(testCase)
+    % Kvadratisk målfunktion
+    [f, g] = makeFunction(1);
+
+    X = [0 1 -1 0 0.5 -0.5 0.3 0.1;
+         0 0  0 1 -1  0.5 -0.2 0.2];
+
+    F = zeros(1, size(X, 2));
+    G = zeros(2, size(X, 2));
+
+    for i = 1:size(X, 2)
+        F(i) = f(X(:, i));
+        G(:, i) = g(X(:, i));
+    end
+
+    % Alla observationer i en historikpost
+    evalsAll.X = X;
+    evalsAll.F = F;
+    evalsAll.G = G;
+
+    % Samma observationer fördelade på två historikposter
+    evals1.X = X(:, 1:4);
+    evals1.F = F(1:4);
+    evals1.G = G(:, 1:4);
+
+    evals2.X = X(:, 5:8);
+    evals2.F = F(5:8);
+    evals2.G = G(:, 5:8);
+
+    x = X(:, end);
+    config.fixed_or_exact = 1;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+    % Kör med en respektive två historikposter
+    dAll = denoise(x, F(end), G(:,end), ...
+        eye(2), {evalsAll}, 2, [], [], [], ...
+        -inf(2,1), config, weights);
+
+    dSplit = denoise(x, F(end), G(:,end), ...
+        eye(2), {evals1, evals2}, 2, [], [], [], ...
+        -inf(2,1), config, weights);
+
+    % Samma mätpunkter ska ge samma resultat
+    verifyEqual(testCase, dSplit, dAll, ...
+        'AbsTol', 1e-10);
+
+    % Resultatet ska vara en användbar sökriktning
+    verifyTrue(testCase, all(isfinite(dSplit)));
+    verifyEqual(testCase, norm(dSplit), 1, ...
+        'AbsTol', 1e-10);
+end
+
 function checkDenoising(testCase, f, g, seed)
 % Sample a small cloud around one point and add modest measurement noise.
     previousRng = rng;
