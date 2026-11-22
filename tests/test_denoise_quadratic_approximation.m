@@ -98,6 +98,48 @@ function testInsufficientSamples(testCase)
     verifyEqual(testCase, d, zeros(2, 1));
 end
 
+function testDenoiseRespectsLowerBounds(testCase)
+    % Startpunkt nära undre gränsen
+    x = [0.1; 0];
+    xLbd = [0; -inf];
+
+    % Syntetiska mätpunkter, med startpunkten sist
+    X = [0 1 -1 0 0.5 -0.5 0.3 0.1;
+         0 0  0 1 -1   0.5 -0.2 0];
+
+    % Kvadratisk målfunktion
+    f = @(z) -(z(1) + 1)^2 - z(2)^2;
+    g = @(z) [-2*(z(1) + 1); -2*z(2)];
+
+    F = zeros(1, size(X, 2));
+    G = zeros(2, size(X, 2));
+
+    for i = 1:size(X, 2)
+        F(i) = f(X(:, i));
+        G(:, i) = g(X(:, i));
+    end
+
+    evals.X = X;
+    evals.F = F;
+    evals.G = G;
+
+    config.fixed_or_exact = 1;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+    d = denoise(x, f(x), g(x), eye(2), {evals}, 2, ...
+        [], [], [], xLbd, config, weights);
+
+    % Riktningen ska vara ändlig och inte noll
+    verifyTrue(testCase, all(isfinite(d)));
+    verifyGreaterThan(testCase, norm(d), 0);
+
+    % Riktningen ska peka mot den undre gränsen
+    verifyLessThan(testCase, d(1), 0);
+
+    % Ett helt steg får inte överskrida gränsen
+    verifyGreaterThanOrEqual(testCase, x + d, xLbd);
+end
+
 function checkDenoising(testCase, f, g, seed)
 % Sample a small cloud around one point and add modest measurement noise.
     previousRng = rng;
