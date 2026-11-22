@@ -75,6 +75,29 @@ function testFixedPointMatchesDirect(testCase)
         'AbsTol', 1e-6);
 end
 
+function testInsufficientSamples(testCase)
+    % Endast en mätpunkt i två dimensioner
+    x = [0.5; 0.3];
+    f = 2;
+    g = [1; -1];
+
+    evals.X = x;
+    evals.F = f;
+    evals.G = g;
+
+    B = eye(2);
+    xLbd = -inf(2, 1);
+
+    config.fixed_or_exact = 1;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+    d = denoise(x, f, g, B, {evals}, 2, ...
+        [], [], [], xLbd, config, weights);
+
+    % Ingen unik kvadratisk approximation är möjlig
+    verifyEqual(testCase, d, zeros(2, 1));
+end
+
 function checkDenoising(testCase, f, g, seed)
 % Sample a small cloud around one point and add modest measurement noise.
     previousRng = rng;
