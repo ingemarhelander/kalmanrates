@@ -13,9 +13,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   2. Ogiltig punkt (NaN/Inf), eller ingen förbättring, bortom den
 %      bästa punkten: ny övre gräns alphaMax (börjar på 1).
 %   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10.
-%   4. Annars: ML-polynom (select_poly_degree) genom alla giltiga punkter,
-%      även de bortom alphaMax; nästa punkt är polynomets maximum i
-%      [0, alphaMax] (find_step_length).
+%   4. Annars: ML-polynom (select_poly_degree) genom de giltiga punkterna
+%      i [0, alphaMax]; nästa punkt är polynomets maximum (find_step_length).
 %   5. Stopp när
 %        - lutningen i bästa punkten är liten, |S| <= c*|S0| (tidigast
 %          efter minEvals punkter),
@@ -108,13 +107,14 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             continue
         end
 
-        % ML-polynom i t = alpha/alphaMax genom alla giltiga punkter, även
-        % de sämre än F0 och de bortom alphaMax (t > 1). alphaMax begränsar
-        % bara var nästa punkt får hamna (t i [0, 1]) och sätter skalan för
-        % h och dMin.
-        t = alphas(ok)/alphaMax;
-        St = alphaMax*(evals.G(:, ok)'*d);    % lutning dF/dt
-        [q, fit, info] = select_poly_degree(t, evals.F(ok), St);
+        % ML-polynom i t = alpha/alphaMax genom alla giltiga punkter i
+        % [0, alphaMax], även de sämre än F0. Punkter bortom alphaMax tas inte
+        % med: de ligger ofta tiopotenser bort, och polynomet följer då fallet
+        % ut mot dem i stället för toppen nära 0.
+        inFit = ok & alphas <= alphaMax*(1 + 1e-12);
+        t = alphas(inFit)/alphaMax;
+        St = alphaMax*(evals.G(:, inFit)'*d);    % lutning dF/dt
+        [q, fit, info] = select_poly_degree(t, evals.F(inFit), St);
         % Gradvalet under tabellraden (skrivs av print_rest) om showDegree
         degreeLine = '';
         if opts.showDegree
