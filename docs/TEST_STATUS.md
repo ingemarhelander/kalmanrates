@@ -41,20 +41,35 @@ Testavgränsning: Testningen fokuserar på gruppens egna implementationer, för�
 
 ## Automatisk testning
 
-GitHub Actions-workflow: `.github/workflows/matlab-tests.yml`, körs vid varje push till `main` och manuellt via Actions. Fem MEX-oberoende testfiler ingår i den aktiva CI-testsviten och har passerat:
+
+GitHub Actions-workflow: `.github/workflows/matlab-tests.yml`, körs vid varje push till `main` och manuellt via Actions.
+
+Den aktuella CI-testsviten innehåller fem MEX-oberoende testfiler:
 
 ```matlab
-setupPaths
-files = {'tests/testDataLimit.m', ...
-         'tests/testLineSearchMain.m', ...
-         'tests/testMlPolyMain.m', ...
-         'tests/testSelectPolyDegreeLr.m', ...
-         'tests/test_denoise_quadratic_approximation.m'};
-results = runtests(files);
-assertSuccess(results)
+setupPaths;
+testFiles = {
+    'tests/testDataLimit.m'
+    'tests/testLineSearchMain.m'
+    'tests/testSelectPolyDegree.m'
+    'tests/test_denoise_quadratic_approximation.m'
+    'tests/testFindSearchDirection.m'
+};
+results = runtests(testFiles);
+disp(table(results));
+assertSuccess(results);
 ```
 
-**Ännu inte i CI:** `testAdCounts.m` (kräver kompatibel MEX-fil), `test_poly_fit_ml.m`, `test_mult_q_poly_fits.m`, `test_select_poly_degree.m` (äldre fristående skript som bör ses över och konverteras till `matlab.unittest`). Detta innebär inte att skripten är felaktiga, bara att de inte är del av den nya ordinarie sviten.
+**Senaste verifierade CI-resultat (2026-11-22):**
+- Fyra tester för sökriktning/Gram–Schmidt (#5) passerade.
+- Övriga tester passerade utom `testSelectPolyDegree/tooLowDegreeIsRaised`.
+- Hela CI-körningen har därför status **Failed**.
+- Felet i polynomgradvalet är reproducerat och utreds separat.
+
+[Körningslogg](https://github.com/ingemarhelander/kalmanrates/actions/runs/45042917181)
+
+**Inte i CI:** MEX-beroende tester som `testAdCounts.m`, vilka kräver en kompatibel testmiljö.
+
 
 ## Godkännandekriterier
 
@@ -79,7 +94,7 @@ En rad får byta till **Approved** när:
 1. **Klart:** Utökad femfilerssvit körd och godkänd i CI.
    Resultatet dokumenterat i verifieringsloggen.
 2. Identifiera testluckor i Req. 22–31 och följ upp [#38](https://github.com/ingemarhelander/kalmanrates/issues/38) vid ändrat stoppkriterium.
-3. Komplettera enhetstester för CG/Gram–Schmidt och Kalman/RTS med kända facit.
+3. 3. Komplettera vid behov testerna för gruppens egna implementationer av CG/Gram–Schmidt och följ upp Issue #5.
 4. Genomför integrationskontroll med riktiga EUR-data och jämför två linjesökningsmetoder från samma startpunkt.
 5. Kör MEX/AD-regression på rätt Windows-version och så småningom hela EUR-historiken.
 
