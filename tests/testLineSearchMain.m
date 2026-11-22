@@ -1,10 +1,10 @@
 classdef testLineSearchMain < matlab.unittest.TestCase
-% testLineSearchMain - Tester för hela line_search_main på en påhittad
-% målfunktion. tests/stubs/kalmanObj.m ersätter Kalman.
-%
-% Målfunktionen längs d = [2; 0.5] har sitt maximum vid alpha ~ 0.29.
-%
-% Kör från projektroten med:  setupPaths; runtests('tests/testLineSearchMain.m')
+    % testLineSearchMain - Tester för hela line_search_main på en påhittad
+    % målfunktion. tests/stubs/kalmanObj.m ersätter Kalman.
+    %
+    % Målfunktionen längs d = [2; 0.5] har sitt maximum vid alpha ~ 0.29.
+    %
+    % Kör från projektroten med:  setupPaths; runtests('tests/testLineSearchMain.m')
 
     methods (TestClassSetup)
         function addPaths(testCase)
@@ -13,6 +13,8 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                 fullfile(fileparts(testDir), 'scripts', 'line_search')));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture( ...
                 fullfile(testDir, 'stubs')));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture( ...
+                fullfile(fileparts(testDir), 'scripts', 'functions')));
         end
     end
 
@@ -62,7 +64,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.02);
             % Stopp på liten lutning, i bästa punkten eller vid polynomets max
             testCase.verifyTrue(contains(evals.reason, 'ligger nära') || ...
-                                contains(evals.reason, 'är liten'), evals.reason);
+                contains(evals.reason, 'är liten'), evals.reason);
         end
 
         function neverRepeatsAnAlpha(testCase)
@@ -81,7 +83,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             % startpunkten. Maximum ligger vid alpha = 1e-3. Sökningen ska
             % krympa steget med faktor 10 tills F ökar, inte ge upp.
             K = @(x) deal(0.01*log(x(1) + 1e-17) - 10*x(1) - x(2)^2, ...
-                          [0.01/(x(1) + 1e-17) - 10; -2*x(2)]);
+                [0.01/(x(1) + 1e-17) - 10; -2*x(2)]);
             [f0, g0] = K([0; 0]);
             [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
             testCase.verifyEqual(evals.A(2:4), [1 0.1 0.01], 'AbsTol', 1e-15);
@@ -116,7 +118,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             K = objective(0.05, 0.1);
             [f0, g0] = K([0; 0]);
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, ...
-                                           struct('maxEvals', 2, 'dMin', 1e-9));
+                struct('maxEvals', 2, 'dMin', 1e-9));
             testCase.verifyEqual(numel(evals.A), 3);
             testCase.verifyTrue(contains(evals.reason, 'maxEvals'), evals.reason);
         end
@@ -163,15 +165,15 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 0.6 längs d = [1; 0]
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
-                                           struct('alphaMin', 0.1));
+                struct('alphaMin', 0.1));
             testCase.verifyEqual(evals.A(2), 1);    % 10/0.6 > 1
             K = @(x) deal(-1e3*(x(1) - 1)^2, [-2e3*(x(1) - 1); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 2000
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
-                                           struct('alphaMin', 1e-3));
+                struct('alphaMin', 1e-3));
             testCase.verifyEqual(evals.A(2), 0.005, 'AbsTol', 1e-15);  % 10/2000
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
-                                           struct('alphaMin', 0.1));
+                struct('alphaMin', 0.1));
             testCase.verifyEqual(evals.A(2), 0.1);  % 10/2000 < alphaMin
         end
 
@@ -195,7 +197,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             Kb = @(x) deal(10*x(1) + 0.01*log(1 - x(1)), [10 - 0.01/(1 - x(1)); 0]);
             [f0, g0] = Kb([0; 0]);
             [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kb, ...
-                                                  struct('alphaMin', 0.1));
+                struct('alphaMin', 0.1));
             testCase.verifyTrue(contains(evals.reason, 'inte bäst'), evals.reason);
             testCase.verifyGreaterThan(fNew, f0);
             testCase.verifyEqual(fNew, max(evals.F));
@@ -207,7 +209,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
             [f0, g0] = K([0; 0]);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
-                                               struct('alphaMin', 0.1));
+                struct('alphaMin', 0.1));
             testCase.verifyLessThanOrEqual(max(evals.A), 1);
             testCase.verifyEqual(alpha, 1);
         end
@@ -222,46 +224,81 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyError(@() runQuiet([0; 0], f0, g0, [2; 0.5], K, struct('alphaMax', 5)), ?MException);
             testCase.verifyError(@() runQuiet([0; 0], f0, g0, [2; 0.5], K, struct('xLbd', [0; 0])), ?MException);
         end
+
+
+        function searchDirectionAndLineSearchRespectBounds(testCase)
+            % Syntetisk, deterministisk målfunktion
+            K = @(x) deal( ...
+                -(x(1) + 1)^2 - x(2)^2, ...
+                [-2*(x(1) + 1); -2*x(2)]);
+
+            % Startpunkt nära undre gränsen
+            x = [0.1; 0];
+            xLbd = [0; -inf];
+
+            [f, g] = K(x);
+
+            % Steg 1: Beräkna sökriktning
+            d = find_search_direction(x, g, xLbd, []);
+
+            % Steg 2: Utför linjesökning
+            [alpha, xNew, fNew] = runQuiet(x, f, g, d, K);
+
+            % Den nya punkten ska respektera gränserna
+            testCase.verifyGreaterThanOrEqual(xNew, xLbd);
+
+            % Målfunktionen ska förbättras
+            testCase.verifyGreaterThan(fNew, f);
+
+            % Steglängden ska ligga inom tillåtet intervall
+            testCase.verifyGreaterThan(alpha, 0);
+            testCase.verifyLessThanOrEqual(alpha, 1);
+
+            % De två funktionernas resultat ska vara konsistenta
+            testCase.verifyEqual(xNew, x + alpha*d, ...
+                'AbsTol', 1e-12);
+        end
+
     end
 end
 
 function K = objective(sF, sG)
 % f(x) = h(x1) - 2*x2^2 med brus, och gradienten.
-    h  = @(t) 6*(1 - exp(-3*t)) - 2.5*t.^2;
-    dh = @(t) 18*exp(-3*t) - 5*t;
-    K = @(x) deal(h(x(1)) - 2*x(2)^2 + sF*randn, [dh(x(1)); -4*x(2)] + sG*randn(2, 1));
+h  = @(t) 6*(1 - exp(-3*t)) - 2.5*t.^2;
+dh = @(t) 18*exp(-3*t) - 5*t;
+K = @(x) deal(h(x(1)) - 2*x(2)^2 + sF*randn, [dh(x(1)); -4*x(2)] + sG*randn(2, 1));
 end
 
 function K = deterministicObjective()
 % Som objective, men "bruset" är en fast funktion av x i stället för randn.
-    h  = @(t) 6*(1 - exp(-3*t)) - 2.5*t.^2;
-    dh = @(t) 18*exp(-3*t) - 5*t;
-    K = @(x) deal(h(x(1)) - 2*x(2)^2 + 0.05*sin(997*x(1)), ...
-                  [dh(x(1)); -4*x(2)] + 0.1*[cos(991*x(1)); sin(983*x(2))]);
+h  = @(t) 6*(1 - exp(-3*t)) - 2.5*t.^2;
+dh = @(t) 18*exp(-3*t) - 5*t;
+K = @(x) deal(h(x(1)) - 2*x(2)^2 + 0.05*sin(997*x(1)), ...
+    [dh(x(1)); -4*x(2)] + 0.1*[cos(991*x(1)); sin(983*x(2))]);
 end
 
 function a = trueMaximum()
 % Maximum av f längs d = [2; 0.5] utan brus.
-    fLine = @(a) 6*(1 - exp(-6*a)) - 2.5*(2*a).^2 - 2*(0.5*a).^2;
-    a = fminbnd(@(a) -fLine(a), 0, 1);
+fLine = @(a) 6*(1 - exp(-6*a)) - 2.5*(2*a).^2 - 2*(0.5*a).^2;
+a = fminbnd(@(a) -fLine(a), 0, 1);
 end
 
 function [f, g] = nanForLongSteps(K, x)
 % Som K, men NaN när x1 > 1 (motsvarar alpha > 0.5 längs d = [2; 0.5]).
-    [f, g] = K(x);
-    if x(1) > 1
-        f = NaN;
-    end
+[f, g] = K(x);
+if x(1) > 1
+    f = NaN;
+end
 end
 
 function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, opts)
 % line_search_main utan utskrifter.
 % Om inget annat anges är alphaMin = 1, så första steget blir alpha = 1 och
 % testerna ovan inte beror på initial_step_length.
-    if nargin < 6
-        opts = struct();
-    end
-    if ~isfield(opts, 'alphaMin'), opts.alphaMin = 1; end
-    alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
-    evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts);');
+if nargin < 6
+    opts = struct();
+end
+if ~isfield(opts, 'alphaMin'), opts.alphaMin = 1; end
+alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
+evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts);');
 end
