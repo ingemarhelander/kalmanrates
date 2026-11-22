@@ -140,6 +140,38 @@ function testDenoiseRespectsLowerBounds(testCase)
     verifyGreaterThanOrEqual(testCase, x + d, xLbd);
 end
 
+function testCollinearSamples(testCase)
+    % Flera mätpunkter, men alla ligger på samma linje
+    X = [-2 -1 0 1 2;
+          0  0 0 0 0];
+
+    f = @(x) -(x(1)-1)^2 - x(2)^2;
+    g = @(x) [-2*(x(1)-1); -2*x(2)];
+
+    F = zeros(1, size(X, 2));
+    G = zeros(2, size(X, 2));
+
+    for i = 1:size(X, 2)
+        F(i) = f(X(:, i));
+        G(:, i) = g(X(:, i));
+    end
+
+    evals.X = X;
+    evals.F = F;
+    evals.G = G;
+
+    x = X(:, end);
+    config.fixed_or_exact = 1;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+    d = denoise(x, F(end), G(:, end), ...
+        eye(2), {evals}, 2, [], [], [], ...
+        -inf(2,1), config, weights);
+
+    % Punkterna täcker inte båda dimensionerna
+    verifyEqual(testCase, d, zeros(2,1));
+end
+
 function checkDenoising(testCase, f, g, seed)
 % Sample a small cloud around one point and add modest measurement noise.
     previousRng = rng;
