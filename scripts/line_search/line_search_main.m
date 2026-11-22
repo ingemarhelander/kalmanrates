@@ -16,14 +16,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   4. Annars: ML-polynom (select_poly_degree) genom alla giltiga punkter,
 %      även de bortom alphaMax; nästa punkt är polynomets maximum i
 %      [0, alphaMax] (find_step_length).
-%   5. Hamnar maximum på en redan mätt, sämre punkt: gå halvvägs mot
-%      grannen på den sida lutningen i bästa punkten pekar mot.
-%   6. Stopp när
+%   5. Stopp när
 %        - lutningen i bästa punkten är liten, |S| <= c*|S0|, eller
 %          maximum ligger nära en mätt punkt med liten lutning
 %          (båda tidigast efter minEvals punkter),
-%        - maximum är den bästa punkten,
-%        - bästa punkten och grannen i 5 ligger närmare än dMin*alphaMax,
+%        - maximum är en redan mätt punkt (bästa eller inte),
 %        - maxEvals punkter är utvärderade.
 % Returnerar den giltiga punkten med störst F (alpha = 0 om ingen var
 % bättre än startpunkten).
@@ -156,37 +153,14 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             stop = true;
             break
         end
-        % Maximum är exakt en mätt punkt som är ogiltig eller sämre än den
-        % bästa (typiskt alphaMax själv). Gå i stället halvvägs från bästa
-        % punkten mot närmaste mätta granne åt det håll lutningen där pekar
-        % (positiv: höger, annars vänster). Den punkten är alltid ny.
-        if dist <= 1e-12*alphaHat && i ~= okIdx(iBest)
-            if sBest > 0
-                neighbour = min(alphas(alphas > alphaBest));
-                if isempty(neighbour)
-                    neighbour = alphaMax;    % ingen mätt punkt till höger
-                end
-            else
-                neighbour = max(alphas(alphas < alphaBest));
-            end
-            % Stopp: bästa punkten och grannen ligger närmare än dMin*alphaMax
-            % (t.ex. när F ökar ända fram till en variansgräns)
-            if abs(neighbour - alphaBest) < opts.dMin*alphaMax
-                evals.reason = sprintf(['maximum inringat mellan alpha = %.4g och %.4g ' ...
-                                        '(avstånd < dMin*alphaMax)'], alphaBest, neighbour);
-                print_rest(q, [], 'stopp', degreeLine);
-                stop = true;
-                break
-            end
-            alphaNew = (alphaBest + neighbour)/2;
-            evals.AHat(end) = alphaNew;
-            print_rest(q, alphaNew, 'halvvägs', degreeLine);
-            continue
-        end
-        % Stopp: maximum är exakt bästa punkten. kalmanObj är deterministisk,
-        % så en ny körning där ger inget nytt.
+        % Stopp: maximum är exakt en redan mätt punkt. kalmanObj är
+        % deterministisk, så en ny körning där ger inget nytt.
         if dist <= 1e-12*alphaHat
-            evals.reason = sprintf('polynomets max är den bästa punkten alpha = %.3g, redan utvärderad', alphaHat);
+            if i == okIdx(iBest)
+                evals.reason = sprintf('polynomets max är den bästa punkten alpha = %.3g, redan utvärderad', alphaHat);
+            else
+                evals.reason = sprintf('polynomets max är alpha = %.3g, redan utvärderad och inte bäst', alphaHat);
+            end
             print_rest(q, [], 'stopp', degreeLine);
             stop = true;
             break
