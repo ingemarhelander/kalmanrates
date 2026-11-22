@@ -10,7 +10,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %      alpha = 1 inte går förbi någon variansgräns (find_search_direction
 %      och denoise), så här finns ingen gränskontroll. Första punkten från
 %      initial_step_length_main, i [alphaMin, 1].
-%   2. Ogiltig punkt (NaN/Inf/komplex), eller ingen förbättring, bortom den
+%   2. Ogiltig punkt (NaN/Inf), eller ingen förbättring, bortom den
 %      bästa punkten: ny övre gräns alphaMax (börjar på 1).
 %   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10.
 %   4. Annars: ML-polynom (select_poly_degree) genom alla giltiga punkter,
@@ -29,7 +29,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 % alpha, varför), sist varför sökningen stoppade och vilken punkt som valdes.
 %
 % evals: en kolumn per giltig punkt, startpunkten först. Ogiltiga punkter
-% (NaN/Inf/komplex) tas bort innan evals returneras, eftersom denoise
+% (NaN/Inf) tas bort innan evals returneras, eftersom denoise
 % använder evals.
 %   X, F, G  punkt, funktionsvärde, gradient
 %   A        steglängd (0 för startpunkten)
@@ -75,21 +75,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 
     for k = 1:nLoop
         [fTry, gTry] = kalmanObj(x + alphaNew*d, K, mu, varInd);
-        % Komplext F (negativ varians i barriärtermens log) sparas som NaN
-        isComplex = any(imag(fTry) ~= 0) || any(imag(gTry) ~= 0);
-        if isComplex
-            fTry = NaN;  gTry = NaN(size(gTry));
-        else
-            fTry = real(fTry);  gTry = real(gTry);
-        end
         evals.X(:, end+1) = x + alphaNew*d;  evals.F(end+1) = fTry;  evals.G(:, end+1) = gTry;
         evals.Q(end+1) = NaN;  evals.AHat(end+1) = NaN;
         alphas(end+1) = alphaNew; %#ok<AGROW>
         % Första halvan av tabellraden skrivs nu, så att punkten syns även om
         % anpassningen kraschar; print_rest avslutar raden.
-        if isComplex
-            fprintf('    %2d  %.3e  %-10s  %-10s', k, alphaNew, 'komplex', '');
-        elseif ~(isfinite(fTry) && all(isfinite(gTry)))
+        if ~(isfinite(fTry) && all(isfinite(gTry)))
             fprintf('    %2d  %.3e  %-10s  %-10s', k, alphaNew, 'NaN/Inf', '');
         else
             fprintf('    %2d  %.3e  %+.3e  %+.3e', k, alphaNew, fTry - f, gTry'*d);
@@ -184,7 +175,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     gNew = evals.G(:, j);
     nInvalid = numel(alphas) - numel(ok);
 
-    % Ta bort ogiltiga punkter (NaN/Inf/komplex) ur evals innan den lämnas
+    % Ta bort ogiltiga punkter (NaN/Inf) ur evals innan den lämnas
     % ut. Loopen behövde dem för att krympa alphaMax, men denoise använder
     % evals och klarar inte NaN.
     evals.X = evals.X(:, ok);  evals.F = evals.F(ok);  evals.G = evals.G(:, ok);
@@ -249,7 +240,7 @@ function print_rest(q, alphaNext, why, degreeLine)
 end
 
 function ok = valid_points(evals)
-% Punkter som får användas: ändliga F och G (komplexa är redan NaN).
+% Punkter som får användas: ändliga F och G.
     ok = isfinite(evals.F) & all(isfinite(evals.G), 1);
 end
 

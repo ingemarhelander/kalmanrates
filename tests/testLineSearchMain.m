@@ -175,20 +175,6 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyEqual(evals.A(2), 0.1);  % 10/2000 < alphaMin
         end
 
-        function complexValuesAreInvalid(testCase)
-            % Ett för långt steg ger log av ett negativt tal (gränsen ligger
-            % vid alpha = 0.5). Sådana punkter ska sparas som NaN, inte bli
-            % förbättringar. Startlutning 3, så första steget blir 1.
-            Kd = @(x) deal(log(0.5 - x(1)) - 0.1*x(1)^2 + 5*x(1), [-1/(0.5 - x(1)) - 0.2*x(1) + 5; 0]);
-            [f0, g0] = Kd([0; 0]);
-            [~, ~, fNew, gNew, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kd);
-            testCase.verifyTrue(isreal(fNew) && isreal(gNew));
-            testCase.verifyGreaterThan(fNew, f0);
-            % alpha = 1 gav komplext F och är borttagen ur evals
-            testCase.verifyFalse(any(evals.A == 1));
-            testCase.verifyTrue(isreal(evals.F) && all(isfinite(evals.F)));
-        end
-
         function nonAscentDirectionEvaluatesNothing(testCase)
             % dF/dalpha(0) < 0: ingen Kalman-körning, startpunkten returneras.
             K = objective(0.05, 0.1);
