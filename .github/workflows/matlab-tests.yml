@@ -30,6 +30,7 @@ jobs:
               'tests/testLineSearchMain.m'
               'tests/testSelectPolyDegree.m'
               'tests/test_denoise_quadratic_approximation.m'
+              'tests/testFindSearchDirection.m'
             };
             results = runtests(testFiles);
             disp(table(results));
