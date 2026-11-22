@@ -30,6 +30,51 @@ function testSmoothSineFunction(testCase)
     checkDenoising(testCase, f, g, 33);
 end
 
+function testFixedPointMatchesDirect(testCase)
+    % Exakt kvadratisk funktion utan brus
+    [f, g] = makeFunction(1);
+
+    center = [0.35; -0.2];
+
+    X = [0 1 -1 0 0.5 -0.5 0.3;
+         0 0  0 1 -1   0.5 -0.2];
+
+    F = zeros(1, size(X, 2));
+    G = zeros(2, size(X, 2));
+
+    for i = 1:size(X, 2)
+        F(i) = f(X(:, i));
+        G(:, i) = g(X(:, i));
+    end
+
+    % Deterministiskt brus för reproducerbart test
+    F = F + 0.001 * sin(1:numel(F));
+    G = G + 0.001 * [sin(1:size(G,2)); cos(1:size(G,2))];
+
+    evals.X = X;
+    evals.F = F;
+    evals.G = G;
+
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+    xLbd = -inf(2, 1);
+
+    % Fixed-point iteration
+    config.fixed_or_exact = 0;
+    dFixed = denoise(center, f(center), g(center), ...
+        eye(2), {evals}, 2, [], [], [], ...
+        xLbd, config, weights);
+
+    % Direkt lösning
+    config.fixed_or_exact = 1;
+    dDirect = denoise(center, f(center), g(center), ...
+        eye(2), {evals}, 2, [], [], [], ...
+        xLbd, config, weights);
+
+    % Metoderna ska ge samma sökriktning
+    verifyEqual(testCase, dFixed, dDirect, ...
+        'AbsTol', 1e-6);
+end
+
 function checkDenoising(testCase, f, g, seed)
 % Sample a small cloud around one point and add modest measurement noise.
     previousRng = rng;
