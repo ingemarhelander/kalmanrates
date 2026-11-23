@@ -198,7 +198,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             [f0, g0] = Kb([0; 0]);
             [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kb, ...
                 struct('alphaMin', 0.1));
-            testCase.verifyTrue(contains(evals.reason, 'inte bäst'), evals.reason);
+            testCase.verifyTrue(contains(evals.reason, 'redan utvärderad'), evals.reason);
             testCase.verifyGreaterThan(fNew, f0);
             testCase.verifyEqual(fNew, max(evals.F));
             testCase.verifyLessThan(alpha, 1);

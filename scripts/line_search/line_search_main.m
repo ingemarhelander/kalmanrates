@@ -18,9 +18,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %      polynomets maximum i [0, alphaMax] (find_step_length).
 %   5. Stopp när
 %        - lutningen i bästa punkten är liten, |S| <= c*|S0| (tidigast
-%          efter minEvals punkter),
-%        - maximum ligger närmare än dMin*alphaMax en redan mätt punkt
-%          (bästa eller inte),
+%          efter minEvals punkter; standard 1, alltså direkt),
+%        - maximum ligger närmare än dMin*alphaMax en redan mätt punkt,
 %        - maxEvals punkter är utvärderade.
 % Returnerar den giltiga punkten med störst F (alpha = 0 om ingen var
 % bättre än startpunkten).
@@ -42,7 +41,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   dMin      (1e-2)  avstånd relativt alphaMax som räknas som samma punkt
 %   c         (0.05)  lutningen räknas som liten när |S| <= c*|S0|
 %   maxEvals  (20)    högsta antal kalmanObj-körningar
-%   minEvals  (1)     stoppet på liten lutning gäller först efter så många punkter
+%   minEvals  (1)     stoppet på liten lutning gäller först efter så många
+%                     punkter. 1 påverkar ingenting (gäller direkt).
 %   alphaMin  (0.1)   kortaste första steg
 %   showDegree (0)    1: skriv gradvalet under varje tabellrad (LR för varje
 %                     prövat steg q -> q+1, sigmaF och sigmaG före och efter)
@@ -217,11 +217,7 @@ function reason = stop_reason(k, alphas, evals, iBest, alphaHat, alphaMax, d, S0
     % nytt.
     [dist, i] = min(abs(alphaHat - alphas));     % närmaste mätta punkt
     if dist <= max(opts.dMin*alphaMax, 1e-12*alphaHat)
-        if i == iBest
-            reason = sprintf('polynomets max ligger nära den bästa punkten alpha = %.3g, redan utvärderad', alphas(i));
-        else
-            reason = sprintf('polynomets max ligger nära alpha = %.3g, redan utvärderad och inte bäst', alphas(i));
-        end
+        reason = sprintf('polynomets max ligger nära alpha = %.3g, redan utvärderad', alphas(i));
     end
 end
 
