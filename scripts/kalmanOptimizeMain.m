@@ -57,7 +57,6 @@ while true
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             degreeLog = store_degree_log(degreeLog, evals, iter, true);
-            print_iteration(iter, alpha, f, fNew, g, gNew);
             print_iteration(iter, alpha, f, fNew, g, gNew, evals);
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
