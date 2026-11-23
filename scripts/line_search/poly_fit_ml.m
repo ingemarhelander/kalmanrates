@@ -8,6 +8,12 @@ function fit = poly_fit_ml(alpha, F, S, q, fit0)
 %   3. Skatta sigmaF^2 och sigmaG^2 från residualerna, sätt w = 1/sigma^2.
 %   4. Upprepa 2-3 tills vikterna slutar ändras.
 %
+% Med färre än 4 punkter (m < 4) hålls vikterna fasta på wF = wG = 1 i
+% t-skala och steg 3-4 hoppas över. Med så få punkter kan polynomet gå
+% exakt genom F eller S (q = 2 har 3 koefficienter). Den sortens sigma
+% blir då 0, dess vikt oändlig (bara golvet stoppar den), och den andra
+% sortens mätningar ignoreras. fit0 används inte då.
+%
 % In:   alpha, F, S  steglängder, funktionsvärden och lutningar g'*d (m x 1)
 %       q            polynomgrad
 %       fit0         (valfri) anpassning av lägre grad till samma punkter.
@@ -18,8 +24,10 @@ function fit = poly_fit_ml(alpha, F, S, q, fit0)
 % Ut:   fit.y              koefficienter för 1, alpha, alpha^2, ... (q+1 x 1)
 %       fit.rF, fit.rG     residualer för F och S
 %       fit.sigmaF/sigmaG  skattade standardavvikelser
-%       fit.wF, fit.wG     vikter 1/sigma^2
+%       fit.wF, fit.wG     vikter 1/sigma^2 (från residualerna, även när
+%                          anpassningen gjordes med fasta vikter)
 %       fit.iterations, fit.converged
+%       fit.fixedWeights   true om m < 4 (fasta vikter, 0 iterationer)
 %
 % Ger felet 'poly_fit_ml:rankDeficient' om punkterna inte bestämmer
 % alla koefficienter.
@@ -56,7 +64,8 @@ function fit = poly_fit_ml(alpha, F, S, q, fit0)
 
     wF = 1;
     wG = 1;
-    if nargin >= 5
+    fixedWeights = m < 4;        % för få punkter för att skatta bruset
+    if nargin >= 5 && ~fixedWeights
         % fit0.wG gäller lutningen i alpha; här är lutningen i t
         wF = fit0.wF;
         wG = fit0.wG/alphaScale^2;
@@ -64,6 +73,11 @@ function fit = poly_fit_ml(alpha, F, S, q, fit0)
     maxIter = 1000;
     tol = 1e-8;
     converged = false;
+    if fixedWeights
+        maxIter = 0;             % ingen viktiteration
+        converged = true;
+    end
+    iterations = 0;
 
     % Golv för varianserna (avrundningsfel), annars kan vikterna hoppa
     % mellan varven när residualerna är nästan noll.
@@ -71,6 +85,7 @@ function fit = poly_fit_ml(alpha, F, S, q, fit0)
     floorG = (1e-10*max(sqrt(mean(S.^2)), 1))^2;
 
     for k = 1:maxIter
+        iterations = k;
         % Viktad minsta kvadrat på F och S tillsammans
         y = [sqrt(wF)*a; sqrt(wG)*b] \ [sqrt(wF)*F; sqrt(wG)*S];
 
@@ -111,6 +126,7 @@ function fit = poly_fit_ml(alpha, F, S, q, fit0)
     fit.sigmaG = sqrt(sigmaG2)/alphaScale;
     fit.wF = 1/sigmaF2;
     fit.wG = 1/fit.sigmaG^2;
-    fit.iterations = k;
+    fit.iterations = iterations;
     fit.converged = converged;
+    fit.fixedWeights = fixedWeights;
 end
