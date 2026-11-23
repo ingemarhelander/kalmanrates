@@ -16,10 +16,10 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
 %            polynomets valda maximum. Svarta punkter och tangentstreck är
 %            de observerade F-värdena och lutningarna i den senaste
 %            anpassningen.
-%   Rad 4:   gradval: LR-statistik för varje prövat steg q -> q+1 mot
-%            gränsvärdet (röd linje), för de senaste 6 anpassningarna.
+%   Rad 4:   gradval: LR-statistik för varje prövat steg q -> q+1 eller q+2 mot
+%            sitt gränsvärde (rött streck), för de senaste 6 anpassningarna.
 %
-% Kräver att line_search_main sparar evals.fitAlphaMax (se anvisning).
+% Med backtracking (line_search) finns inga polynom; då ritas bara rad 1.
 % Kräver MATLAB R2020b eller senare (tiledlayout i flikar, xline).
 %
 % In:   history  från kalmanOptimizeMain (efter att stepSizes uppdaterats)
@@ -40,9 +40,13 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
     maxTabs = 100;                        % högsta antal sparade flikar
     nCol = 6;
 
-    if ~isempty(evals.fit) && ~isfield(evals, 'fitAlphaMax')
-        error(['plot_iteration: evals.fitAlphaMax saknas. Lägg till ' ...
-               'evals.fitAlphaMax i line_search_main (se anvisning).']);
+    % Backtracking-sökningen (line_search) anpassar inga polynom och har
+    % varken fit-fälten eller reason; rita då bara förloppet.
+    if ~isfield(evals, 'fit') || ~isfield(evals, 'fitAlphaMax')
+        evals.fit = {};
+    end
+    if ~isfield(evals, 'reason')
+        evals.reason = '';
     end
 
     iter = numel(history.fvals);
@@ -75,7 +79,10 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
         axis off
     else
         F0 = evals.F(1);                  % startpunkten är första kolumnen
-        tt = linspace(0, 1, 400)';
+        % Varje polynom ritas över alla punkter det anpassades till. Alla
+        % giltiga punkter ingår, även de bortom alphaMax (t > 1), så kurvan
+        % ska inte sluta vid alphaMax.
+        tGrid = @(k) linspace(0, max([1; evals.fitAlpha{k}(:)]), 400)';
         cmap = parula(nFit + 1);          % +1 så sista färgen inte är ljusgul
 
         % ---- Rad 2-3, vänster: F-F0 mot alpha ----
@@ -88,6 +95,7 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
             tHat = find_step_length(fit, h, 1);
             lw = 1;
             if k == nFit, lw = 2.5; end
+            tt = tGrid(k);
             hl(k) = plot(tt*aMax, poly_value(fit, tt) - F0, '-', ...
                          'Color', cmap(k, :), 'LineWidth', lw);
             plot(tHat*aMax, poly_value(fit, tHat) - F0, 'v', ...
@@ -123,6 +131,7 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
             tHat = find_step_length(fit, h, 1);
             lw = 1;
             if k == nFit, lw = 2.5; end
+            tt = tGrid(k);
             plot(tt*aMax, poly_slope(fit, tt)/aMax, '-', ...
                  'Color', cmap(k, :), 'LineWidth', lw);
             plot(tHat*aMax, poly_slope(fit, tHat)/aMax, 'v', ...
@@ -146,12 +155,13 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
                      numel(fit.y) - 1, m), 'HorizontalAlignment', 'center');
                 axis([0 1 0 1]);
             else
-                steps = 2:(1 + numel(info.LR));
+                % Varje test har egen gräns: crit för q -> q+1, crit2 för q -> q+2
+                steps = 1:numel(info.LR);
                 bar(steps, info.LR);
-                yline(info.crit, 'r--');
+                plot(steps, info.critTest, 'r_', 'MarkerSize', 20, 'LineWidth', 2);
                 xticks(steps);
-                xticklabels(arrayfun(@(s) sprintf('%d->%d', s, s + 1), steps, ...
-                                     'UniformOutput', false));
+                xticklabels(arrayfun(@(s) sprintf('%d->%d', info.qFrom(s), info.qTo(s)), ...
+                                     steps, 'UniformOutput', false));
             end
             title(sprintf('anp. %d: \\sigma_F=%.2g, \\sigma_G=%.2g', ...
                           k, fit.sigmaF, fit.sigmaG), 'FontSize', 8);

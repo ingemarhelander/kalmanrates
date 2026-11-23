@@ -17,12 +17,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %      grad 3 direkt (se initial_points_main).
 %      Punkterna skrivs ut som vanliga tabellrader med "förvald punkt".
 %   2. Ogiltig punkt (NaN/Inf), eller ingen förbättring, bortom den
-%      bästa punkten: ny övre gräns alphaMax (börjar på 1).
-%   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10 (om shrink = 1).
-%   4. Annars: ML-polynom (select_poly_degree) genom de giltiga punkterna
-%      i [0, alphaMax] (alla giltiga punkter om fitAll = 1); nästa punkt är
-%      polynomets maximum i [0, alphaMax] (find_step_length).
-%   5. Stopp när
+%      bästa punkten: ny övre gräns alphaMax (börjar på 1; om
+%      shrinkAlphaMax = 1).
+%   3. Därefter: ML-polynom (select_poly_degree) genom alla giltiga punkter,
+%      även de bortom alphaMax; nästa punkt är polynomets maximum i
+%      [0, alphaMax] (find_step_length).
+%   4. Stopp när
 %        - lutningen i bästa punkten är liten, |S| <= c*|S0| (tidigast
 %          efter minEvals punkter; standard 1, alltså direkt),
 %        - maximum ligger närmare än dMin*alphaMax en redan mätt punkt,
@@ -58,12 +58,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %                     prövat steg q -> q+1 eller q -> q+2, sigmaF och sigmaG
 %                     före och efter)
 %   saveFits  (0)     1: spara indata till varje gradval i evals.fits
-%   fitAll    (0)     0: polynomet anpassas bara till giltiga punkter i
-%                     [0, alphaMax]. 1: alla giltiga punkter (utan NaN/Inf)
-%                     tas med, även de bortom alphaMax.
-%   shrink    (1)     1: ingen punkt bättre än F0 än ger nästa steg
-%                     alphaMax/10. 0: polynomet anpassas ändå (krymper bara
-%                     om färre än två giltiga punkter finns).
+%   shrinkAlphaMax (1) 1: en punkt bortom bästa som inte är bättre än F0
+%                     blir ny övre gräns alphaMax (maximum söks bara under
+%                     den; t, St och dMin skalas med den). 0: alphaMax = 1
+%                     hela sökningen.
 %   verbose   (0)     0: ingen utskrift (kalmanOptimizeMain skriver en rad per
 %                     iteration). 1: tabellen och sammanfattningen nedan.
 
@@ -123,13 +121,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         ok = valid_points(evals);
         Fvalid = evals.F;
         Fvalid(~ok) = -Inf;                      % ogiltiga kan aldrig bli bäst
-        [fBest, iBest] = max(Fvalid);            % iBest: kolumn i evals
+        [~, iBest] = max(Fvalid);                % iBest: kolumn i evals
         alphaBest = alphas(iBest);
-        improved = fBest > f;
 
         % Ogiltig punkt, eller ingen förbättring, bortom bästa punkten:
-        % ny övre gräns
-        if ~(ok(end) && fTry > f) && alphaNew > alphaBest
+        % ny övre gräns (om shrinkAlphaMax = 1; med 0 ligger alphaMax kvar på 1)
+        if opts.shrinkAlphaMax && ~(ok(end) && fTry > f) && alphaNew > alphaBest
             alphaMax = min(alphaMax, alphaNew);
         end
 
@@ -140,26 +137,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             continue
         end
 
-        % Ingen förbättring än: krymp steget med faktor 10 (om shrink = 1).
-        % Med shrink = 0 anpassas polynomet direkt, utom när färre än två
-        % giltiga punkter finns (då går ingen anpassning att göra).
-        if ~improved && (opts.shrink || nnz(ok) < 2)
-            alphaNew = alphaMax/10;
-            evals.AHat(end) = alphaNew;
-            print_rest(v, [], alphaNew, 'krymp /10');
-            continue
-        end
-
-        % ML-polynom i t = alpha/alphaMax genom de giltiga punkterna, även de
-        % sämre än F0. Med fitAll = 0 tas bara punkter i [0, alphaMax] med:
-        % punkter bortom alphaMax ligger ofta tiopotenser bort, och polynomet
-        % följer då fallet ut mot dem i stället för toppen nära 0. Med
-        % fitAll = 1 tas alla giltiga punkter med (t > 1 för dem bortom
-        % alphaMax); maximum söks ändå bara i [0, alphaMax].
+        % ML-polynom i t = alpha/alphaMax genom alla giltiga punkter (utan
+        % NaN/Inf), även de sämre än F0 och de bortom alphaMax (t > 1).
+        % Maximum söks ändå bara i [0, alphaMax].
         inFit = ok;
-        if ~opts.fitAll
-            inFit = inFit & alphas <= alphaMax*(1 + 1e-12);
-        end
         t = alphas(inFit)/alphaMax;
         St = alphaMax*(evals.G(:, inFit)'*d);    % lutning dF/dt
         [q, fit, info] = select_poly_degree(t, evals.F(inFit), St);
@@ -310,7 +291,7 @@ function opts = default_opts(opts)
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
                  'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
-                 'fitAll', 0, 'shrink', 1, 'verbose', 0);
+                 'shrinkAlphaMax', 1, 'verbose', 0);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));

@@ -18,8 +18,7 @@ function alphas = initial_points_main(alpha1)
 %
 % Ordningen är fallande. line_search_main sänker alphaMax till en punkt
 % som är sämre än F0; med fallande ordning ligger nästa förvalda punkt
-% ändå alltid i [0, alphaMax], så alla fem kommer med i anpassningen
-% även med fitAll = 0.
+% ändå alltid i [0, alphaMax].
 %
 % In:   alpha1  första steglängden, i (0, 1]
 % Ut:   alphas  [alpha1, 3*alpha1/4, alpha1/2, alpha1/4], mäts i den ordningen

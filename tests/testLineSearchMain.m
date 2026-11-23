@@ -80,21 +80,6 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyGreaterThan(fNew, f0);
         end
 
-        function steepStartShrinksUntilImprovement(testCase)
-            % Som i riktiga körningen: en varians nära noll ger en barriärterm
-            % med startlutning ~1e15, och alpha = 1 är mycket sämre än
-            % startpunkten. Maximum ligger vid alpha = 1e-3. Efter de tre
-            % förvalda punkterna (alla sämre än startpunkten) ska sökningen
-            % krympa steget med faktor 10 tills F ökar, inte ge upp.
-            K = @(x) deal(0.01*log(x(1) + 1e-17) - 10*x(1) - x(2)^2, ...
-                [0.01/(x(1) + 1e-17) - 10; -2*x(2)]);
-            [f0, g0] = K([0; 0]);
-            [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
-            testCase.verifyEqual(evals.A(2:6), [1 3/4 1/2 1/4 1/40], 'AbsTol', 1e-15);
-            testCase.verifyGreaterThan(alpha, 0);
-            testCase.verifyGreaterThan(fNew, f0);
-        end
-
         function neverStopsWithoutImprovementBeforeMaxEvals(testCase)
             % Alla stopp utom maxEvals kräver en punkt bättre än startpunkten.
             for seed = 1:5
@@ -163,7 +148,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function nonFinitePointsAreSkipped(testCase)
             % f är NaN för alpha > 0.5, så första punkten (alpha = 1) är NaN.
-            % Sökningen ska krympa steget, inte krascha, och returnera en ändlig
+            % Sökningen ska hoppa över NaN-punkterna, inte krascha, och returnera en ändlig
             % punkt (Req. 42).
             rng(3);
             Kok = objective(0.05, 0.1);
@@ -210,7 +195,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function measuredWorseProposalStops(testCase)
             % F ökar ända fram till gränsen alpha = 1 (log(1 - alpha) = -Inf
-            % där). Efter krympningen till 0.1 föreslår polynomet gränsen
+            % där). Efter de förvalda punkterna föreslår polynomet gränsen
             % igen, en redan mätt ogiltig punkt. Sökningen ska stoppa och
             % returnera den bästa punkten, inte köra gränsen igen.
             Kb = @(x) deal(10*x(1) + 0.01*log(1 - x(1)), [10 - 0.01/(1 - x(1)); 0]);
