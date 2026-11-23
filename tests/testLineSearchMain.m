@@ -160,21 +160,21 @@ classdef testLineSearchMain < matlab.unittest.TestCase
         end
 
         function firstStepFromInitialStepLength(testCase)
-            % Första steget är deltaF/(g'*d) = 10/S0, begränsat till
+            % Första steget är deltaF/(g'*d) = 100/S0, begränsat till
             % [alphaMin, 1].
             K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 0.6 längs d = [1; 0]
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
                 struct('alphaMin', 0.1));
-            testCase.verifyEqual(evals.A(2), 1);    % 10/0.6 > 1
+            testCase.verifyEqual(evals.A(2), 1);    % 100/0.6 > 1
             K = @(x) deal(-1e3*(x(1) - 1)^2, [-2e3*(x(1) - 1); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 2000
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
                 struct('alphaMin', 1e-3));
-            testCase.verifyEqual(evals.A(2), 0.005, 'AbsTol', 1e-15);  % 10/2000
+            testCase.verifyEqual(evals.A(2), 0.05, 'AbsTol', 1e-15);  % 100/2000
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
                 struct('alphaMin', 0.1));
-            testCase.verifyEqual(evals.A(2), 0.1);  % 10/2000 < alphaMin
+            testCase.verifyEqual(evals.A(2), 0.1);  % 100/2000 < alphaMin
         end
 
         function nonAscentDirectionEvaluatesNothing(testCase)
