@@ -61,7 +61,10 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             K = objective(1e-3, 1e-3);
             [f0, g0] = K([0; 0]);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
-            testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.02);
+            % 0.05: de förvalda punkterna ligger jämnt i [0, alpha1], så
+            % sökningen kan stoppa när polynomets max hamnar nära en av dem
+            % i stället för precis vid toppen 0.294.
+            testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.05);
             % Stopp på liten lutning, i bästa punkten eller vid polynomets max
             testCase.verifyTrue(contains(evals.reason, 'ligger nära') || ...
                 contains(evals.reason, 'är liten'), evals.reason);
@@ -80,13 +83,14 @@ classdef testLineSearchMain < matlab.unittest.TestCase
         function steepStartShrinksUntilImprovement(testCase)
             % Som i riktiga körningen: en varians nära noll ger en barriärterm
             % med startlutning ~1e15, och alpha = 1 är mycket sämre än
-            % startpunkten. Maximum ligger vid alpha = 1e-3. Sökningen ska
+            % startpunkten. Maximum ligger vid alpha = 1e-3. Efter de tre
+            % förvalda punkterna (alla sämre än startpunkten) ska sökningen
             % krympa steget med faktor 10 tills F ökar, inte ge upp.
             K = @(x) deal(0.01*log(x(1) + 1e-17) - 10*x(1) - x(2)^2, ...
                 [0.01/(x(1) + 1e-17) - 10; -2*x(2)]);
             [f0, g0] = K([0; 0]);
             [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
-            testCase.verifyEqual(evals.A(2:4), [1 0.1 0.01], 'AbsTol', 1e-15);
+            testCase.verifyEqual(evals.A(2:6), [1 3/4 1/2 1/4 1/40], 'AbsTol', 1e-15);
             testCase.verifyGreaterThan(alpha, 0);
             testCase.verifyGreaterThan(fNew, f0);
         end
@@ -104,13 +108,28 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function stopsAtAlphaOneWhenAlwaysIncreasing(testCase)
             % f ökar hela vägen: polynomet har inget maximum före 1, så
-            % förslaget blir 1 igen och sökningen stoppar direkt.
+            % förslaget efter de fyra förvalda punkterna blir 1 igen och
+            % sökningen stoppar direkt.
             rng(1);
             K = @(x) deal(x(1) + 1e-3*randn, [1; 0] + 1e-3*randn(2, 1));
             [f0, g0] = K([0; 0]);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
             testCase.verifyEqual(alpha, 1);
-            testCase.verifyEqual(numel(evals.A), 2);
+            testCase.verifyEqual(numel(evals.A), 5);
+        end
+
+        function initialPointsBeforeFirstFit(testCase)
+            % alpha1, 3*alpha1/4, alpha1/2 och alpha1/4 mäts först, i den
+            % ordningen, och inget polynom anpassas förrän alla fyra är
+            % mätta (Q = NaN för de tre första). alpha1 = 100/S0 = 0.05 här.
+            K = @(x) deal(-1e3*(x(1) - 1)^2, [-2e3*(x(1) - 1); 0]);
+            [f0, g0] = K([0; 0]);              % S0 = 2000
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
+                struct('alphaMin', 1e-3));
+            testCase.verifyEqual(evals.A(2:5), 0.05*[1 3/4 1/2 1/4], 'AbsTol', 1e-15);
+            testCase.verifyTrue(all(isnan(evals.Q(1:4))));
+            testCase.verifyFalse(isnan(evals.Q(5)));
+            testCase.verifyEqual(evals.AHat(2:4), 0.05*[3/4 1/2 1/4], 'AbsTol', 1e-15);
         end
 
         function maxEvalsLimitsEvaluations(testCase)

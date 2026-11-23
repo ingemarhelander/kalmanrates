@@ -8,8 +8,14 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   0. Är dF/dalpha(0) <= 0 pekar d inte uppåt: returnera startpunkten.
 %   1. alpha ligger alltid i (0, 1]. Riktningen d är redan skalad så att
 %      alpha = 1 inte går förbi någon variansgräns (find_search_direction
-%      och denoise), så här finns ingen gränskontroll. Första punkten från
-%      initial_step_length_main, i [alphaMin, 1].
+%      och denoise), så här finns ingen gränskontroll. Första punkten
+%      alpha1 från initial_step_length_main, i [alphaMin, 1].
+%   1b. Förvalda punkter (initial_points_main): alpha1, 3*alpha1/4,
+%      alpha1/2 och alpha1/4 mäts innan något polynom anpassas, så att
+%      första anpassningen har 5 punkter (med startpunkten). Då är
+%      ML-skattningen av bruset inte degenererad och gradvalet kan välja
+%      grad 3 direkt (se initial_points_main).
+%      Punkterna skrivs ut som vanliga tabellrader med "förvald punkt".
 %   2. Ogiltig punkt (NaN/Inf), eller ingen förbättring, bortom den
 %      bästa punkten: ny övre gräns alphaMax (börjar på 1).
 %   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10 (om shrink = 1).
@@ -64,7 +70,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = 1;                % övre gräns, krymper när en punkt bortom bästa är dålig
-    alphaNew = initial_step_length_main(g, d, opts.alphaMin);   % första punkten, i [alphaMin, 1]
+    alpha1 = initial_step_length_main(g, d, opts.alphaMin);     % första punkten, i [alphaMin, 1]
+    pending = initial_points_main(alpha1);   % förvalda punkter: alpha1, 3/4, 1/2, 1/4 av alpha1
     S0 = g'*d;                   % startlutning
     stop = false;
 
@@ -85,6 +92,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     end
 
     for k = 1:nLoop
+        % De förvalda punkterna mäts först, sedan bestämmer polynomet
+        if ~isempty(pending)
+            alphaNew = pending(1);
+            pending(1) = [];
+        end
         [fTry, gTry] = kalmanObj(x + alphaNew*d, K, mu, varInd);
         evals.X(:, end+1) = x + alphaNew*d;  evals.F(end+1) = fTry;  evals.G(:, end+1) = gTry;
         evals.Q(end+1) = NaN;  evals.AHat(end+1) = NaN;
@@ -111,6 +123,13 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         % ny övre gräns
         if ~(ok(end) && fTry > f) && alphaNew > alphaBest
             alphaMax = min(alphaMax, alphaNew);
+        end
+
+        % Förvalda punkter kvar: mät nästa innan något polynom anpassas
+        if ~isempty(pending)
+            evals.AHat(end) = pending(1);
+            print_rest(v, [], pending(1), 'förvald punkt');
+            continue
         end
 
         % Ingen förbättring än: krymp steget med faktor 10 (om shrink = 1).
