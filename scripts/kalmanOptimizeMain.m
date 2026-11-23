@@ -15,6 +15,7 @@ weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
+plotLive = isfield(config, 'plot_live') && config.plot_live ~= 0;
 periods = experimentPeriods(config); % In-sample, optimization and out-of-sample periods
 
 [K, varInd, xLbd, x, data] = setup_problem(periods);
@@ -39,6 +40,7 @@ while true
     %Print and update history
     history.stepSizes(end+1, 1) = alpha;
     evalHist = store_evals(evalHist, evals, noisy_size);
+    if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
 
     %Make sure the last n search direction is stored as a base B and run noisy optimization
     [D, B] = store_direction(D, d, noisy_size);
@@ -54,6 +56,7 @@ while true
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+            if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
             print_iteration(iter, alpha, f, fNew, g, gNew);
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
