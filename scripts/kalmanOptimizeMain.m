@@ -25,6 +25,7 @@ history = init_history(x);
 D = [];           % All orthogonal search directions 
 B = [];          % Last noisy_size search directions (one per column)
 evalHist = {};   % History of line search evaluations
+degreeLog = init_degree_log(config, periods); % Gradvalets indata per linjesökning (ls_saveFits)
 iter = 1;
 stalls = 0;      % Consecutive iterations where x did not change
 
@@ -36,6 +37,7 @@ while true
 
     %Line search to find length of step and new X
     [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
+    degreeLog = store_degree_log(degreeLog, evals, iter, false);
 
     %Print and update history
     history.stepSizes(end+1, 1) = alpha;
@@ -48,7 +50,7 @@ while true
     %Iteration done, update counter and x f and g
     xStart = x;
     if size(D, 2) < noisy_size
-        print_iteration(iter, alpha, f, fNew, g, gNew);
+        print_iteration(iter, alpha, f, fNew, g, gNew, evals);
         [x, f, g] = update_step(xNew, fNew, gNew);
     elseif size(D, 2) >= noisy_size
         d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
@@ -57,7 +59,8 @@ while true
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
             if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
-            print_iteration(iter, alpha, f, fNew, g, gNew);
+            degreeLog = store_degree_log(degreeLog, evals, iter, true);
+            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
         end
@@ -140,9 +143,11 @@ function lineSearchFcn = select_line_search(config)
     fprintf('Line search: %s\n', lower(method));
 end
 
-function print_iteration(iter, alpha, f, fNew, g, gNew)
-    fprintf('\nMain loop iteration %3d: alpha = %.4e, fNew-fPrev = %+.4e, fNew = %.6f, |gPrev| = %.4e, |gNew| = %.4e\n\n', ...
-            iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
+function print_iteration(iter, alpha, f, fNew, g, gNew, evals)
+% One line per iteration. evals: the line search's evaluations; the number
+% of (valid) kalmanObj runs is printed, start point not counted.
+    fprintf('Iter %3d: alpha = %.3e, fNew-fPrev = %+.3e, fNew = %.6f, |g| = %.3e, LS evals = %d\n', ...
+            iter, alpha, fNew-f, fNew, norm(gNew), numel(evals.F) - 1);
 end
 
 function [D, B] = store_direction(D, d, noisy_size)
@@ -153,6 +158,28 @@ function [D, B] = store_direction(D, d, noisy_size)
     else
     B = []; 
     end
+end
+
+function degreeLog = init_degree_log(config, periods)
+% Tom logg för gradvalet. Med ls_saveFits 1 får den ett filnamn i data/,
+% märkt med starttiden, och sparas efter varje linjesökning.
+    degreeLog.file = '';
+    degreeLog.modelFile = periods.modelFile;
+    degreeLog.searches = struct('iter', {}, 'denoise', {}, 'fits', {});
+    if isfield(config, 'ls_saveFits') && config.ls_saveFits
+        degreeLog.file = dataPath(sprintf('degreeLog_%s.mat', datestr(now, 'yyyy-mm-dd_HHMMSS')));
+        fprintf('Degree selection log: %s\n', degreeLog.file);
+    end
+end
+
+function degreeLog = store_degree_log(degreeLog, evals, iter, isDenoise)
+% Lägger till gradvalen från en linjesökning och sparar filen. Görs efter
+% varje sökning, så att loggen finns kvar om körningen avbryts.
+    if isempty(degreeLog.file) || ~isfield(evals, 'fits')
+        return
+    end
+    degreeLog.searches(end+1) = struct('iter', iter, 'denoise', isDenoise, 'fits', {evals.fits});
+    save(degreeLog.file, '-struct', 'degreeLog');
 end
 
 function evalHist = store_evals(evalHist, evals, noisy_size)

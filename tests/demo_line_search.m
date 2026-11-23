@@ -100,10 +100,10 @@ function s = describeDegreeLoop(info, q)
 % Text som beskriver vilka grader som provades och varför loopen stannade.
     parts = {};
     for k = 1:numel(info.LR)
-        if info.LR(k) > info.crit
-            parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f > %.2f, höj', k + 1, k + 2, info.LR(k), info.crit); %#ok<AGROW>
+        if info.LR(k) > info.critTest(k)
+            parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f > %.2f, höj', info.qFrom(k), info.qTo(k), info.LR(k), info.critTest(k)); %#ok<AGROW>
         else
-            parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f \\leq %.2f, stanna', k + 1, k + 2, info.LR(k), info.crit); %#ok<AGROW>
+            parts{end+1} = sprintf('%d\\rightarrow%d: LR = %.1f \\leq %.2f, stanna', info.qFrom(k), info.qTo(k), info.LR(k), info.critTest(k)); %#ok<AGROW>
         end
     end
     if q == info.qMax
