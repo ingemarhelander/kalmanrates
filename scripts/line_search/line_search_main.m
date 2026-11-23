@@ -41,6 +41,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   Q        vald grad (NaN om ingen anpassning gjordes)
 %   AHat     nästa steglängd efter punkten
 %   reason   varför sökningen stoppade
+%   fits     (cell, tom om inte opts.saveFits) indata och resultat för
+%            varje anrop av select_poly_degree, för replayDegreeSelection:
+%            k (punktnummer), t = alpha/alphaMax, F, St (dF/dt), alphaMax,
+%            q (vald grad), tHat (polynomets max i t)
 %
 % opts (valfri, ls_-raderna i kalmanOptimizeMain.config):
 %   h         (1e-3)  steg längs polynomet i find_step_length, relativt alphaMax
@@ -51,7 +55,9 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %                     punkter. 1 påverkar ingenting (gäller direkt).
 %   alphaMin  (0.1)   kortaste första steg
 %   showDegree (0)    1: skriv gradvalet under varje tabellrad (LR för varje
-%                     prövat steg q -> q+1, sigmaF och sigmaG före och efter)
+%                     prövat steg q -> q+1 eller q -> q+2, sigmaF och sigmaG
+%                     före och efter)
+%   saveFits  (0)     1: spara indata till varje gradval i evals.fits
 %   fitAll    (0)     0: polynomet anpassas bara till giltiga punkter i
 %                     [0, alphaMax]. 1: alla giltiga punkter (utan NaN/Inf)
 %                     tas med, även de bortom alphaMax.
@@ -67,9 +73,9 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     opts = default_opts(opts);
 
     evals.X = x;  evals.F = f;  evals.G = g;
-    evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';
     evals.fit = {};  evals.fitInfo = {};  evals.fitAlpha = {};
     evals.fitF = {};  evals.fitSlope = {};  evals.fitAlphaMax = {};
+    evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';  evals.fits = {};
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = 1;                % övre gräns, krymper när en punkt bortom bästa är dålig
     alpha1 = initial_step_length_main(g, d, opts.alphaMin);     % första punkten, i [alphaMin, 1]
@@ -172,6 +178,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         tHat = find_step_length(fit, opts.h, 1);
         alphaHat = tHat*alphaMax;
         evals.AHat(end) = alphaHat;
+        if opts.saveFits
+            evals.fits{end+1} = struct('k', k, 't', t, 'F', evals.F(inFit), 'St', St, ...
+                                       'alphaMax', alphaMax, 'q', q, 'tHat', tHat);
+        end
 
         reason = stop_reason(k, alphas, evals, iBest, alphaHat, alphaMax, d, S0, opts);
         if ~isempty(reason)
@@ -257,10 +267,10 @@ function s = describe_degree(info)
     end
     s = sprintf('          gradval  m = %d, qMax = %d\n', info.m, info.qMax);
     for k = 1:numel(info.LR)
-        if info.LR(k) > info.crit
-            verdict = sprintf(' > %.2f  höj   ', info.crit);
+        if info.LR(k) > info.critTest(k)
+            verdict = sprintf(' > %.2f  höj   ', info.critTest(k));
         else
-            verdict = sprintf('<= %.2f  stanna', info.crit);
+            verdict = sprintf('<= %.2f  stanna', info.critTest(k));
         end
         s = [s, sprintf('            %d->%d  LR = %7.2f %s   sF %.2e -> %.2e   sG %.2e -> %.2e\n', ...
                         info.qFrom(k), info.qTo(k), info.LR(k), verdict, ...
@@ -299,7 +309,8 @@ function opts = default_opts(opts)
 % Fyller i standardvärden. Okända fält ger fel, så att ett felstavat eller
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
-                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'fitAll', 0, 'shrink', 1, 'verbose', 0);
+                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
+                 'fitAll', 0, 'shrink', 1, 'verbose', 0);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
