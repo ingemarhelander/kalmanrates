@@ -73,6 +73,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     opts = default_opts(opts);
 
     evals.X = x;  evals.F = f;  evals.G = g;
+    evals.fit = {};  evals.fitInfo = {};  evals.fitAlpha = {};
+    evals.fitF = {};  evals.fitSlope = {};  evals.fitAlphaMax = {};
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';  evals.fits = {};
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = 1;                % övre gräns, krymper när en punkt bortom bästa är dålig
@@ -161,6 +163,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         t = alphas(inFit)/alphaMax;
         St = alphaMax*(evals.G(:, inFit)'*d);    % lutning dF/dt
         [q, fit, info] = select_poly_degree(t, evals.F(inFit), St);
+        evals.fit{end+1} = fit;
+        evals.fitInfo{end+1} = info;
+        evals.fitAlpha{end+1} = t;
+        evals.fitF{end+1} = evals.F(inFit);
+        evals.fitSlope{end+1} = St;
+        evals.fitAlphaMax{end+1} = alphaMax;
         % Gradvalet under tabellraden (skrivs av print_rest) om showDegree
         degreeLine = '';
         if opts.showDegree
