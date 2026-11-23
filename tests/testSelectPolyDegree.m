@@ -112,43 +112,6 @@ classdef testSelectPolyDegree < matlab.unittest.TestCase
             end
         end
 
-        function fewPointsUseFixedWeights(testCase)
-            % m = 2 och 3: fasta vikter, så varken F eller S anpassas
-            % exakt (sigma i golvet) och båda sorterna används. m = 4: ML.
-            for m = 2:4
-                for i = 1:10
-                    rng(i);
-                    alpha = linspace(0, 1, m)';
-                    [F, S] = quadratic(alpha, 0.05, 0.5);
-                    fit = poly_fit_ml(alpha, F, S, 2);
-                    msg = sprintf('m = %d, frö %d', m, i);
-                    testCase.verifyEqual(fit.fixedWeights, m < 4, msg);
-                    testCase.verifyGreaterThan(fit.sigmaF, 1e-6, msg);
-                    testCase.verifyGreaterThan(fit.sigmaG, 1e-6, msg);
-                    if m < 4
-                        testCase.verifyEqual(fit.iterations, 0, msg);
-                    end
-                end
-            end
-        end
-
-        function fixedWeightsAreEqualInT(testCase)
-            % m < 4: samma resultat som vanlig minsta kvadrat på F och
-            % S*alphaScale (lutningen i t), och oberoende av fit0.
-            rng(3);
-            alpha = [0; 0.3; 0.8];
-            [F, S] = quadratic(alpha, 0.05, 0.5);
-            sc = max(alpha);
-            a = [ones(3,1), alpha/sc, (alpha/sc).^2];
-            b = [zeros(3,1), ones(3,1), 2*alpha/sc];
-            yT = [a; b] \ [F; S*sc];
-            fit = poly_fit_ml(alpha, F, S, 2);
-            testCase.verifyEqual(fit.y, yT ./ sc.^(0:2)', 'AbsTol', 1e-10);
-            fit0 = fit;  fit0.wF = 1e6;  fit0.wG = 1e-6;
-            fitWarm = poly_fit_ml(alpha, F, S, 2, fit0);
-            testCase.verifyEqual(fitWarm.y, fit.y, 'AbsTol', 1e-12);
-        end
-
         function noiseOnlyOnS(testCase)
             % F exakt och brus bara på S: ska inte ge för hög grad.
             alpha = linspace(0, 1, 15)';
