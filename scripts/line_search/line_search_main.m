@@ -52,7 +52,6 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %                     prövat steg q -> q+1 eller q -> q+2, sigmaF och sigmaG
 %                     före och efter)
 %   saveFits  (0)     1: spara indata till varje gradval i evals.fits
-%                     prövat steg q -> q+1, sigmaF och sigmaG före och efter)
 %   fitAll    (0)     0: polynomet anpassas bara till giltiga punkter i
 %                     [0, alphaMax]. 1: alla giltiga punkter (utan NaN/Inf)
 %                     tas med, även de bortom alphaMax.
@@ -287,8 +286,8 @@ function opts = default_opts(opts)
 % Fyller i standardvärden. Okända fält ger fel, så att ett felstavat eller
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
-                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0);
-                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'fitAll', 0, 'shrink', 1, 'verbose', 0);
+                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
+                 'fitAll', 0, 'shrink', 1, 'verbose', 0);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
