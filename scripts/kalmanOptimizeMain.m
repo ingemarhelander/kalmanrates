@@ -46,7 +46,7 @@ while true
     %Iteration done, update counter and x f and g
     xStart = x;
     if size(D, 2) < noisy_size
-        print_iteration(iter, alpha, f, fNew, g, gNew);
+        print_iteration(iter, alpha, f, fNew, g, gNew, evals);
         [x, f, g] = update_step(xNew, fNew, gNew);
     elseif size(D, 2) >= noisy_size
         d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
@@ -54,7 +54,7 @@ while true
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
             [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
-            print_iteration(iter, alpha, f, fNew, g, gNew);
+            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
         end
@@ -137,9 +137,11 @@ function lineSearchFcn = select_line_search(config)
     fprintf('Line search: %s\n', lower(method));
 end
 
-function print_iteration(iter, alpha, f, fNew, g, gNew)
-    fprintf('\nMain loop iteration %3d: alpha = %.4e, fNew-fPrev = %+.4e, fNew = %.6f, |gPrev| = %.4e, |gNew| = %.4e\n\n', ...
-            iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
+function print_iteration(iter, alpha, f, fNew, g, gNew, evals)
+% One line per iteration. evals: the line search's evaluations; the number
+% of (valid) kalmanObj runs is printed, start point not counted.
+    fprintf('Iter %3d: alpha = %.3e, fNew-fPrev = %+.3e, fNew = %.6f, |g| = %.3e, LS evals = %d\n', ...
+            iter, alpha, fNew-f, fNew, norm(gNew), numel(evals.F) - 1);
 end
 
 function [D, B] = store_direction(D, d, noisy_size)
