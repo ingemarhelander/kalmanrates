@@ -1,8 +1,8 @@
-classdef testMlPolyMain < matlab.unittest.TestCase
-% testMlPolyMain - Tester för ML-boxen (ml_poly_main) med lag-1-gradval:
-% att ML-skattningen i poly_fit_ml och lag1_autocorr fungerar tillsammans.
+classdef testSelectPolyDegree < matlab.unittest.TestCase
+% testSelectPolyDegree - Tester för gradvalet med LR-test
+% (select_poly_degree och poly_fit_ml).
 %
-% Kör från projektroten med:  setupPaths; runtests('tests/testMlPolyMain.m')
+% Kör från projektroten med:  setupPaths; runtests('tests/testSelectPolyDegree.m')
 
     methods (TestClassSetup)
         function addPaths(testCase)
@@ -20,6 +20,40 @@ classdef testMlPolyMain < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function quadraticStaysTwo(testCase)
+            % Rätt grad och bara brus: graden ska sällan höjas.
+            q = selectMany(@(a) 1 + 3*a - 5*a.^2, @(a) 3 - 10*a, 8);
+            testCase.verifyGreaterThanOrEqual(mean(q == 2), 0.9);
+        end
+
+        function cubicGivesThree(testCase)
+            q = selectMany(@(a) 1 + 2*a - 6*a.^3, @(a) 2 - 18*a.^2, 6);
+            testCase.verifyGreaterThanOrEqual(mean(q == 3), 0.9);
+        end
+
+        function quarticGivesFour(testCase)
+            q = selectMany(@(a) 1 - 4*a.^3 + 5*a.^4, @(a) -12*a.^2 + 20*a.^3, 6);
+            testCase.verifyGreaterThanOrEqual(mean(q == 4), 0.9);
+        end
+
+        function maxDegreeIsMMinusTwo(testCase)
+            % Fjärdegrads med för få punkter: graden stannar vid m - 2 (minst 2).
+            for m = 2:5
+                q = selectMany(@(a) 1 - 4*a.^3 + 5*a.^4, @(a) -12*a.^2 + 20*a.^3, m);
+                testCase.verifyTrue(all(q <= max(2, m - 2)), sprintf('m = %d', m));
+            end
+        end
+
+        function exactPolynomialGivesDegreeTwo(testCase)
+            % Utan brus: q = 2, rätt koefficienter, konvergens.
+            alpha = linspace(0, 1, 10)';
+            [F, S] = quadratic(alpha, 0, 0);
+            [q, fit] = selectQuiet(alpha, F, S);
+            testCase.verifyEqual(q, 2);
+            testCase.verifyTrue(fit.converged);
+            testCase.verifyEqual(fit.y, [1; 3; -5], 'AbsTol', 1e-8);
+        end
+
         function differentNoiseIsEstimated(testCase)
             % Olika brus på F och S ska skattas, och q = 2 väljas.
             sF = 0.01;  sS = 0.1;
@@ -28,7 +62,7 @@ classdef testMlPolyMain < matlab.unittest.TestCase
             for i = 1:20
                 rng(i);
                 [F, S] = quadratic(alpha, sF, sS);
-                [q(i), fit] = mlQuiet(alpha, F, S);
+                [q(i), fit] = selectQuiet(alpha, F, S);
                 ratioF(i) = fit.sigmaF/sF;
                 ratioS(i) = fit.sigmaG/sS;
             end
@@ -38,14 +72,14 @@ classdef testMlPolyMain < matlab.unittest.TestCase
         end
 
         function falseAlarmRateIsNearLevel(testCase)
-            % Rätt grad och bara brus: graden ska sällan höjas.
+            % Rätt grad och bara brus: andelen höjningar ska vara nära 5 %.
             for m = [6 20]
                 alpha = linspace(0, 1, m)';
                 raised = false(300, 1);
                 for i = 1:300
                     rng(i);
                     [F, S] = quadratic(alpha, 0.01, 0.1);
-                    raised(i) = mlQuiet(alpha, F, S) > 2;
+                    raised(i) = selectQuiet(alpha, F, S) > 2;
                 end
                 testCase.verifyLessThanOrEqual(mean(raised), 0.12, sprintf('m = %d', m));
             end
@@ -59,7 +93,7 @@ classdef testMlPolyMain < matlab.unittest.TestCase
                 rng(i);
                 F = sin(3*alpha) + 1e-3*randn(size(alpha));
                 S = 3*cos(3*alpha) + 1e-3*randn(size(alpha));
-                q(i) = mlQuiet(alpha, F, S);
+                q(i) = selectQuiet(alpha, F, S);
             end
             testCase.verifyGreaterThanOrEqual(mean(q > 2), 0.9);
         end
@@ -70,22 +104,12 @@ classdef testMlPolyMain < matlab.unittest.TestCase
                 rng(m);
                 alpha = sort(rand(m, 1));
                 [F, S] = quadratic(alpha, 0.01, 0.1);
-                [q, fit] = mlQuiet(alpha, F, S);
+                [q, fit] = selectQuiet(alpha, F, S);
                 testCase.verifyGreaterThanOrEqual(q, 2, sprintf('m = %d', m));
                 testCase.verifyLessThanOrEqual(q, 6, sprintf('m = %d', m));
                 testCase.verifyTrue(all(isfinite(fit.y)), sprintf('m = %d', m));
                 testCase.verifyTrue(fit.converged, sprintf('m = %d', m));
             end
-        end
-
-        function exactPolynomialGivesDegreeTwo(testCase)
-            % Utan brus: q = 2, rätt koefficienter, konvergens.
-            alpha = linspace(0, 1, 10)';
-            [F, S] = quadratic(alpha, 0, 0);
-            [q, fit] = mlQuiet(alpha, F, S);
-            testCase.verifyEqual(q, 2);
-            testCase.verifyTrue(fit.converged);
-            testCase.verifyEqual(fit.y, [1; 3; -5], 'AbsTol', 1e-8);
         end
 
         function noiseOnlyOnS(testCase)
@@ -95,7 +119,7 @@ classdef testMlPolyMain < matlab.unittest.TestCase
             for i = 1:20
                 rng(i);
                 [F, S] = quadratic(alpha, 0, 0.1);
-                [q(i), fit] = mlQuiet(alpha, F, S);
+                [q(i), fit] = selectQuiet(alpha, F, S);
                 testCase.verifyTrue(all(isfinite(fit.y)), sprintf('frö %d', i));
             end
             testCase.verifyGreaterThanOrEqual(mean(q == 2), 0.8);
@@ -109,8 +133,20 @@ function [F, S] = quadratic(alpha, sF, sS)
     S = 3 - 10*alpha + sS*randn(size(alpha));
 end
 
-function [q, fit] = mlQuiet(alpha, F, S)
-% ml_poly_main med lag-1, utan utskrifterna från poly_fit_ml.
+function [q, fit] = selectQuiet(alpha, F, S)
+% select_poly_degree utan utskrifter.
     q = [];  fit = [];
-    evalc('[q, fit] = ml_poly_main(alpha, F, S, [], ''lag1'');');
+    evalc('[q, fit] = select_poly_degree(alpha, F, S);');
+end
+
+function q = selectMany(F_true, S_true, m)
+% Vald grad för 50 slumpade dataset med m jämnt fördelade punkter.
+    alpha = linspace(0, 1, m)';
+    q = zeros(50, 1);
+    for s = 1:50
+        rng(s);
+        F = F_true(alpha) + 0.003*randn(m, 1);
+        S = S_true(alpha) + 0.015*randn(m, 1);
+        q(s) = selectQuiet(alpha, F, S);
+    end
 end

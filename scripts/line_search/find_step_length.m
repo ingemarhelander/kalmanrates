@@ -1,23 +1,28 @@
-function [alphaNew, alphaMax] = find_step_length(fit, alphaPrev, alphaMax, isBetter)
-% find_step_length - Nästa steglängd från ML-polynomet (Oskar).
+function alphaNew = find_step_length(fit, h, alphaMax)
+% find_step_length - Nästa steglängd: polynomets första maximum.
 %
-% TILLFÄLLIG VERSION: söker polynomets max på ett rutnät, bara för att
-% line_search_main ska gå att köra. Antar att fit.y är
-% koefficienterna för 1, alpha, alpha^2, ... som i poly_fit_ml.
+% Går längs polynomet från 0 med steg h (h, 2h, ... upp till alphaMax) och
+% stannar första gången p'(alpha) < 0. Maximum ligger då mellan de två
+% sista stegen, och mittpunkten returneras (noggrannhet h/2). Blir p'
+% aldrig negativ returneras alphaMax. Ingen kalmanObj körs här.
 %
-% In:
-%   fit        anpassningen från poly_fit_ml
-%   alphaPrev  senast utvärderade steglängd
-%   alphaMax   trust region (0, alphaMax]
-%   isBetter   true om alphaPrev gav en förbättring
-% Ut:
-%   alphaNew   nästa steglängd att utvärdera
-%   alphaMax   trust region, krympt om alphaPrev inte gav en förbättring
+% In:   fit       ML-anpassningen (från select_poly_degree)
+%       h         steglängd längs polynomet
+%       alphaMax  längsta tillåtna steg (1 från line_search_main, som
+%                 anpassar i t = alpha/alphaMax)
+% Ut:   alphaNew  nästa steglängd att köra kalmanObj i
 
-    if ~isBetter
-        alphaMax = alphaPrev/2;                       % krymp trust region
+    steps = min((1:ceil(alphaMax/h))*h, alphaMax);
+    k = find(poly_slope(fit, steps) < 0, 1);
+
+    if isempty(k)
+        alphaNew = alphaMax;
+        return
     end
-    a = alphaMax*(1:1000)'/1000;                      % rutnät i (0, alphaMax]
-    [~, i] = max(a.^(0:numel(fit.y) - 1)*fit.y);      % polynomets värde i rutnätet
-    alphaNew = a(i);
+    if k == 1
+        prev = 0;
+    else
+        prev = steps(k - 1);
+    end
+    alphaNew = (prev + steps(k))/2;
 end

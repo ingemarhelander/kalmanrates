@@ -1,5 +1,6 @@
 % kalmanOptimizeMain.m
-% Gradient ascent with backtracking line search for the Kalman objective.
+% Gradient ascent for the Kalman objective, with polynomial line search
+% (line_search_main) or backtracking (line_search), chosen in the config.
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
@@ -8,96 +9,110 @@ run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
-config = read_config(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+config = readConfig(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
+periods = experimentPeriods(config); % In-sample, optimization and out-of-sample periods
+
+[K, varInd, xLbd, x, data] = setup_problem(periods);
 lineSearchFcn = select_line_search(config); % Line search method and its options
 
-[K, varInd, xLbd, x] = setup_problem();
-
 numStarts = config.numStarts;
+if ~isscalar(numStarts) || numStarts < 1 || numStarts ~= floor(numStarts)
+    error('numStarts must be a positive integer.');
+end
+if ~isscalar(config.startPerturbation) || config.startPerturbation < 0
+    error('startPerturbation must be a nonnegative scalar.');
+end
 rng(config.seed, 'twister');
 
-% Första körningen använder den befintliga startpunkten.
+% The first run uses the configured start point; subsequent starts are
+% multiplicatively perturbed and projected onto the configured lower bounds.
 startPoints = repmat(x, 1, numStarts);
-
-% Övriga startpunkter får små multiplikativa störningar.
 for k = 2:numStarts
     startPoints(:, k) = x .* exp( ...
         config.startPerturbation .* randn(size(x)));
+    startPoints(:, k) = max(startPoints(:, k), xLbd);
 end
 
 results = cell(numStarts, 1);
-
 for k = 1:numStarts
-    fprintf('Starting optimization run %d of %d\n', k, numStarts);
-
+    fprintf('\nStarting optimization run %d of %d\n', k, numStarts);
     results{k} = run_single_start( ...
         startPoints(:, k), K, mu, varInd, xLbd, ...
-        noisy_size, maxIter, config, lineSearchFcn);
+        noisy_size, maxIter, config, lineSearchFcn, weights, periods, k);
+    fprintf('Run %d final objective: %.8g (%d iterations)\n', ...
+        k, results{k}.fFinal, results{k}.iterations);
 end
 
 scores = cellfun(@(r) r.fFinal, results);
 [bestScore, bestIndex] = max(scores);
 bestResult = results{bestIndex};
+fprintf('\nBest objective: %.8g from run %d\n', bestScore, bestIndex);
 
-fprintf('Best objective: %.8g from run %d\n', bestScore, bestIndex);
+history = bestResult.history;
+if ~isempty(periods.outOfSampleStart)
+    history.outOfSample = evaluateOutOfSample( ...
+        data.K, data.times, bestResult.xFinal, varInd, periods);
+    print_out_of_sample(history.outOfSample);
+end
+history.bestRunIndex = bestIndex;
+history.runObjectives = scores;
+save_result(bestResult.xFinal, varInd, data.K, periods, history);
 
 %% ------------------------------ Functions -------------------------------
 
-function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, maxIter, config, lineSearchFcn)
+function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
+        maxIter, config, lineSearchFcn, weights, periods, runIndex)
 
     x = x0;
     [f, g] = kalmanObj(x, K, mu, varInd);
-
     history = init_history(x);
-    D = [];          % Alla sökriktningar
-    B = [];          % De senaste noisy_size sökriktningarna
+    D = [];           % All orthogonal search directions
+    B = [];           % Last noisy_size search directions (one per column)
     evalHist = {};
+    degreeLog = init_degree_log(config, periods, runIndex);
     iter = 1;
     stalls = 0;
 
     while true
         history = update_history(history, x, f, g);
 
-        d = find_search_direction(x, g, xLbd, D);
-
+        [d, D] = find_search_direction(x, g, xLbd, D);
         [alpha, xNew, fNew, gNew, evals] = ...
             lineSearchFcn(x, f, g, d, K, mu, varInd);
+        degreeLog = store_degree_log(degreeLog, evals, iter, false);
 
-        print_iteration(iter, alpha, f, fNew, g, gNew);
         history.stepSizes(end + 1, 1) = alpha;
         evalHist = store_evals(evalHist, evals, noisy_size);
-
-        xStart = x;
-        [x, f, g] = update_step(xNew, fNew, gNew);
-        iter = iter + 1;
-
-        if fulfills_stop_criterion(g, iter, maxIter)
-            break;
-        end
-
         [D, B] = store_direction(D, d, noisy_size);
 
-        if iter > noisy_size
-            d_prime = denoise( ...
-                x, f, g, B, evalHist, noisy_size, ...
-                K, mu, varInd, xLbd, config);
-
+        xStart = x;
+        if size(D, 2) < noisy_size
+            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+            [x, f, g] = update_step(xNew, fNew, gNew);
+        else
+            d_prime = denoise(x, f, g, B, evalHist, noisy_size, ...
+                K, mu, varInd, xLbd, config, weights);
             if ~any(d_prime)
                 fprintf(['Denoising produced no feasible direction; ' ...
                          'skipping its line search.\n']);
             else
-                [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
-
+                [alpha, xNew, fNew, gNew, evals] = ...
+                    lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+                degreeLog = store_degree_log(degreeLog, evals, iter, true);
+                print_iteration(iter, alpha, f, fNew, g, gNew, evals);
                 [x, f, g] = update_step(xNew, fNew, gNew);
+                [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
+                    d_prime, D, B, evalHist, noisy_size, evals);
             end
-
             fprintf('Denoising done\n');
         end
 
+        iter = iter + 1;
         if isequal(x, xStart)
             stalls = stalls + 1;
             if stalls >= 3
@@ -114,12 +129,14 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, maxIter,
         end
     end
 
+    result.xInit = x0;
     result.xFinal = x;
     result.fFinal = f;
     result.gFinal = g;
     result.history = history;
     result.evalHist = evalHist;
     result.iterations = iter - 1;
+    result.degreeLogFile = degreeLog.file;
 end
 
 function stop = fulfills_stop_criterion(g, iter, maxIter)
@@ -136,11 +153,13 @@ function stop = fulfills_stop_criterion(g, iter, maxIter)
 end
 
 function lineSearchFcn = select_line_search(config)
-% Returns the line search chosen by config.lineSearch (default backtracking).
+% Returns the line search chosen by config.lineSearch (default polynomial).
 % Keys beginning with ls_ are passed, without the prefix, as options to the
-% polynomial line search (see line_search_main).
+% polynomial line search (see line_search_main). The variance bounds are
+% handled by find_search_direction and denoise, which scale d so that
+% alpha = 1 is feasible.
 
-    method = 'backtracking';
+    method = 'polynomial';
     if isfield(config, 'lineSearch')
         method = config.lineSearch;
     end
@@ -168,9 +187,11 @@ function lineSearchFcn = select_line_search(config)
     fprintf('Line search: %s\n', lower(method));
 end
 
-function print_iteration(iter, alpha, f, fNew, g, gNew)
-    fprintf('Main loop iteration %3d: alpha = %14d, fNew-fPrev = %14f, fNew = %14f, norm of gPrev = %14d, norm of gNew = %14d\n', ...
-            iter, alpha, fNew-f, fNew, norm(g), norm(gNew));
+function print_iteration(iter, alpha, f, fNew, g, gNew, evals)
+% One line per iteration. evals: the line search's evaluations; the number
+% of (valid) kalmanObj runs is printed, start point not counted.
+    fprintf('Iter %3d: alpha = %.3e, fNew-fPrev = %+.3e, fNew = %.6f, |g| = %.3e, LS evals = %d\n', ...
+            iter, alpha, fNew-f, fNew, norm(gNew), numel(evals.F) - 1);
 end
 
 function [D, B] = store_direction(D, d, noisy_size)
@@ -181,6 +202,29 @@ function [D, B] = store_direction(D, d, noisy_size)
     else
     B = []; 
     end
+end
+
+function degreeLog = init_degree_log(config, periods, runIndex)
+% Tom logg för gradvalet. Med ls_saveFits 1 får den ett filnamn i data/,
+% märkt med starttiden, och sparas efter varje linjesökning.
+    degreeLog.file = '';
+    degreeLog.modelFile = periods.modelFile;
+    degreeLog.searches = struct('iter', {}, 'denoise', {}, 'fits', {});
+    if isfield(config, 'ls_saveFits') && config.ls_saveFits
+        degreeLog.file = dataPath(sprintf('degreeLog_%s_run%02d.mat', ...
+            datestr(now, 'yyyy-mm-dd_HHMMSS'), runIndex));
+        fprintf('Degree selection log: %s\n', degreeLog.file);
+    end
+end
+
+function degreeLog = store_degree_log(degreeLog, evals, iter, isDenoise)
+% Lägger till gradvalen från en linjesökning och sparar filen. Görs efter
+% varje sökning, så att loggen finns kvar om körningen avbryts.
+    if isempty(degreeLog.file) || ~isfield(evals, 'fits')
+        return
+    end
+    degreeLog.searches(end+1) = struct('iter', iter, 'denoise', isDenoise, 'fits', {evals.fits});
+    save(degreeLog.file, '-struct', 'degreeLog');
 end
 
 function evalHist = store_evals(evalHist, evals, noisy_size)
@@ -194,13 +238,74 @@ function evalHist = store_evals(evalHist, evals, noisy_size)
     end
 end
 
+
+function [D, B, evalHist] = ReOrthoginalizeAndReOrganize(dprime, D, B, evalHist, noisy_size, evals)
+    Dprime = ReOrthogonalize(dprime, D);
+    Bprime = Dprime(:, end-noisy_size+1:end);
+    evalHistPrime = ReOrganize(evalHist, evals);
+    D = Dprime;
+    B = Bprime;
+    evalHist = evalHistPrime;
+end
+
+function Dprime = ReOrthogonalize(dprime, D)
+
+    %Some error checks that copilot suggested
+    if ~isnumeric(D) || isempty(D)
+        error('D must be a nonempty numeric matrix.');
+    end
+    if ~isnumeric(dprime) || size(dprime, 2) ~= 1 || ...
+            size(dprime, 1) ~= size(D, 1)
+        error('dprime must be a numeric column vector with the same row count as D.');
+    end
+    if any(~isfinite(D(:))) || any(~isfinite(dprime(:)))
+        error('D and dprime must contain only finite values.');
+    end
+    if ~isfinite(norm(dprime)) || norm(dprime) == 0
+        error('dprime must have a finite, nonzero norm.');
+    end
+
+    %Initialize Dprime to be empty except for dprime as the last column.
+    n = size(D, 2);
+    Dprime = zeros(size(D), 'like', D);
+    Dprime(:, end) = dprime / norm(dprime);
+
+    % Go from n-1 down to 1 (so skip the last d that we added) and find the orthogonalized version of each column of D.
+    for k = n-1:-1:1
+        %extract d
+        d = D(:, k);
+
+        %Remove the components of d that are in the direction of thecolumns already in Dprime (from k+1 to n)
+        for i = k+1:1:n
+            d = d - (Dprime(:, i)' * d) * Dprime(:, i);
+        end
+
+        %Check that the resulting vector is finite.
+        if ~isfinite(norm(d))
+            error('Orthogonalization produced a non-finite residual.');
+        end
+
+        %Add in the new normalized direction.
+        Dprime(:, k) = d / norm(d);
+    end
+end
+
+function evalHistPrime = ReOrganize(evalHist, evals)
+    %The new evalHist should be exactly evalHist except we remove the last evals that correspond to di and replace with the new evals that correspond to di prime.
+    evalHistPrime = evalHist;
+    evalHistPrime{end} = evals; % Rewrite the last entry with the new evaluations
+end
+
 %% Help function given by Jörgen.
 
-function [K, varInd, xLbd, x] = setup_problem()
-% Loads data, sets the starting point, selects which variables to optimize
-% and builds the lower bounds for them.
+function [K, varInd, xLbd, x, data] = setup_problem(periods)
+% Loads the model for the periods, sets the starting point, selects which
+% variables to optimize and builds the lower bounds for them. K holds the
+% optimization days; data holds the whole model for the out-of-sample
+% evaluation.
 
-    K = loadKalmanSample();
+    [K, times, ricAll, KI] = loadKalmanModel(periods.modelFile);
+    check_model_periods(KI, periods);
 
     % Index ranges of each parameter block in the full parameter vector
     thetaFInd = (1:length(K.thetaF));
@@ -210,18 +315,35 @@ function [K, varInd, xLbd, x] = setup_problem()
     Sigma0Ind = (1:length(K.Sigma0)) + axInd(end);
     EfVecInd  = (1:length(K.Ef(:)))  + Sigma0Ind(end);
 
-    % Start from the first stored optimum
-    S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
-    xOpt = S.xOptAll(:,1);
-    K.thetaF = xOpt(thetaFInd);
-    K.Sigmaw = xOpt(SigmawInd);
-    K.Sigmav = xOpt(SigmavInd);
-    K.ax     = xOpt(axInd);
-    K.Sigma0 = xOpt(Sigma0Ind);
-    K.Ef(:)  = xOpt(EfVecInd);
+    % Start point: the model's own start parameters (init) or the first
+    % stored optimum (saved)
+    switch periods.startPoint
+        case 'init'
+            fprintf('Start point: the model''s own start parameters\n');
+        case 'saved'
+            S = load(dataPath('kalmanXoptAll.mat'), 'xOptAll');
+            xOpt = S.xOptAll(:,1);
+            if numel(xOpt) ~= EfVecInd(end)
+                error('kalmanrates:ModelAlignment', ...
+                      ['kalmanXoptAll.mat has %d parameters but the model needs %d. ' ...
+                       'Use start_point init for this model.'], numel(xOpt), EfVecInd(end));
+            end
+            if periods.hasInsample
+                warning('kalmanrates:NotOutOfSample', ...
+                        ['start_point saved: kalmanXoptAll.mat was not fitted on the ' ...
+                         'in-sample days only, so the evaluation may not be out of sample.']);
+            end
+            K.thetaF = xOpt(thetaFInd);
+            K.Sigmaw = xOpt(SigmawInd);
+            K.Sigmav = xOpt(SigmavInd);
+            K.ax     = xOpt(axInd);
+            K.Sigma0 = xOpt(Sigma0Ind);
+            K.Ef(:)  = xOpt(EfVecInd);
+            fprintf('Start point: kalmanXoptAll.mat\n');
+    end
 
     % Which variables to optimize
-    optCase = 8;
+    optCase = 9;
     switch optCase
         case 1, varInd = [thetaFInd SigmavInd SigmawInd axInd Sigma0Ind EfVecInd];
         case 2, varInd = [SigmavInd SigmawInd axInd Sigma0Ind];
@@ -231,6 +353,24 @@ function [K, varInd, xLbd, x] = setup_problem()
         case 6, varInd = [thetaFInd SigmavInd SigmawInd Sigma0Ind];
         case 7, varInd = [thetaFInd];
         case 8, varInd = [SigmawInd];
+        case 9, varInd = [thetaFInd SigmavInd SigmawInd axInd Sigma0Ind];
+    end
+
+    % Contracts without quotes on the optimization days do not affect the
+    % likelihood, so their parameters are not optimized (the mu penalty
+    % alone would otherwise push them up without bound).
+    optimizeIdx = selectDays(times, periods.optimizeStart, periods.optimizeEnd);
+    quoted = false(1, K.nu);
+    for t = optimizeIdx
+        quoted = quoted | full(any(K.Iz{t}, 1));
+    end
+    if ~all(quoted)
+        unquoted = find(~quoted);
+        fprintf('Contracts without quotes on the optimization days are not optimized: %s\n', ...
+                strjoin(ricAll(unquoted), ', '));
+        state = K.ns + unquoted;
+        varInd = setdiff(varInd, [thetaFInd(state) SigmavInd(unquoted) SigmawInd(state) ...
+                                  axInd(state) Sigma0Ind(state)], 'stable');
     end
 
     xInitAll = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
@@ -240,6 +380,65 @@ function [K, varInd, xLbd, x] = setup_problem()
 
     x    = xInitAll(varInd);
     xLbd = xLbdAll(varInd);
+
+    % Keep the whole model (now holding the start parameters) for the
+    % out-of-sample evaluation
+    data = struct('K', K, 'times', times);
+    K = subsetKalmanModel(K, optimizeIdx);
+    fprintf('Optimization data: %d days, %s to %s\n', numel(optimizeIdx), ...
+            datestr(floor(times(optimizeIdx(1))), 'yyyy-mm-dd'), datestr(floor(times(optimizeIdx(end))), 'yyyy-mm-dd'));
+end
+
+function check_model_periods(KI, periods)
+% Stops when the loaded model was not built for the periods of the config.
+
+    if ~periods.hasInsample
+        return;
+    end
+    if ~all(isfield(KI, {'insampleStart', 'insampleEnd', 'pcaCutoff'}))
+        error('kalmanrates:InvalidPeriods', ...
+              '%s has no in-sample metadata. Build it again with buildKalmanModel.', periods.modelFile);
+    end
+    if floor(KI.insampleStart) ~= periods.insampleStart || floor(KI.insampleEnd) ~= periods.insampleEnd
+        error('kalmanrates:InvalidPeriods', ...
+              'The model is built on in-sample %s to %s but the config says %s to %s.', ...
+              datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'), ...
+              datestr(periods.insampleStart, 'yyyy-mm-dd'), datestr(periods.insampleEnd, 'yyyy-mm-dd'));
+    end
+    if ~isempty(periods.outOfSampleStart) && KI.pcaCutoff > periods.outOfSampleStart
+        error('kalmanrates:InvalidPeriods', ...
+              'The PCA of the model uses days up to %s, after out_of_sample_start %s.', ...
+              datestr(KI.pcaCutoff - 1, 'yyyy-mm-dd'), datestr(periods.outOfSampleStart, 'yyyy-mm-dd'));
+    end
+    fprintf('Model %s: in-sample %s to %s\n', periods.modelFile, ...
+            datestr(KI.insampleStart, 'yyyy-mm-dd'), datestr(KI.insampleEnd, 'yyyy-mm-dd'));
+end
+
+function print_out_of_sample(r)
+    fprintf('\nOut-of-sample %s to %s (given all earlier days):\n', ...
+        datestr(r.outOfSampleStart, 'yyyy-mm-dd'), datestr(r.outOfSampleEnd, 'yyyy-mm-dd'));
+    fprintf('  Out-of-sample: log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.logLik, r.nDays, r.perDay, r.perObs);
+    fprintf('  Optimization:  log likelihood %14.4f, %4d days, per day %10.4f, per observation %8.4f\n', ...
+        r.optimizeLogLik, r.optimizeDays, r.optimizePerDay, r.optimizePerObs);
+end
+
+function save_result(x, varInd, K, periods, history)
+% Saves the run in data/kalmanOptimizeResult.mat for plotOutOfSample.
+% K is the whole model holding the start parameters. xStart and xOpt are
+% whole parameter vectors (as storeParamVec takes them).
+
+    result.xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    result.xStart(varInd) = history.xInit;
+    result.xOpt = result.xStart;
+    result.xOpt(varInd) = x;
+    result.varInd = varInd;
+    result.periods = periods;
+    result.modelFile = periods.modelFile;
+    result.history = history;
+    result.savedAt = datestr(now, 'yyyy-mm-dd HH:MM');
+    save(dataPath('kalmanOptimizeResult.mat'), '-struct', 'result');
+    fprintf('Saved the result in %s\n', dataPath('kalmanOptimizeResult.mat'));
 end
 
 function [x, f, g] = update_step(xNew, fNew, gNew)
@@ -269,48 +468,4 @@ function history = update_history(history, x, f, g)
     history.normOftravelledDistances(end+1, 1) = norm(history.xInit - x);
     history.xs(:, end+1) = x;
     history.grads(:, end+1) = g;
-end
-
-function config = read_config(configPath)
-% Reads key/value rows into a struct. Blank lines and lines beginning with
-% # or % are ignored.
-
-    fid = fopen(configPath, 'r');
-    if fid == -1
-        error('Could not open config file: %s', configPath);
-    end
-    cleanup = onCleanup(@() fclose(fid));
-    config = struct();
-
-    while true
-        line = fgetl(fid);
-        if ~ischar(line)
-            break;
-        end
-        line = strtrim(line);
-        if isempty(line) || startsWith(line, '#') || startsWith(line, '%')
-            continue;
-        end
-
-        tokens = regexp(line, '^([A-Za-z]\w*)\s+(.+)$', 'tokens', 'once');
-        if isempty(tokens) || ~isvarname(tokens{1})
-            error('Invalid config row: %s', line);
-        end
-
-        key = tokens{1};
-        valueText = strtrim(tokens{2});
-        if strcmpi(valueText, 'true')
-            value = true;
-        elseif strcmpi(valueText, 'false')
-            value = false;
-        else
-            numericValue = str2double(valueText);
-            if ~isnan(numericValue) || strcmpi(valueText, 'nan')
-                value = numericValue;
-            else
-                value = valueText;
-            end
-        end
-        config.(key) = value;
-    end
 end
