@@ -113,4 +113,7 @@ function fit = poly_fit_ml(alpha, F, S, q, fit0)
     fit.wG = 1/fit.sigmaG^2;
     fit.iterations = k;
     fit.converged = converged;
+
+    fit.alphaScale = alphaScale;
+    fit.yScaled = y;
 end

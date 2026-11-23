@@ -8,23 +8,29 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   0. Är dF/dalpha(0) <= 0 pekar d inte uppåt: returnera startpunkten.
 %   1. alpha ligger alltid i (0, 1]. Riktningen d är redan skalad så att
 %      alpha = 1 inte går förbi någon variansgräns (find_search_direction
-%      och denoise), så här finns ingen gränskontroll. Första punkten från
-%      initial_step_length_main, i [alphaMin, 1].
+%      och denoise), så här finns ingen gränskontroll. Första punkten
+%      alpha1 från initial_step_length_main, i [alphaMin, 1].
+%   1b. Förvalda punkter (initial_points_main): alpha1, 3*alpha1/4,
+%      alpha1/2 och alpha1/4 mäts innan något polynom anpassas, så att
+%      första anpassningen har 5 punkter (med startpunkten). Då är
+%      ML-skattningen av bruset inte degenererad och gradvalet kan välja
+%      grad 3 direkt (se initial_points_main).
+%      Punkterna skrivs ut som vanliga tabellrader med "förvald punkt".
 %   2. Ogiltig punkt (NaN/Inf), eller ingen förbättring, bortom den
 %      bästa punkten: ny övre gräns alphaMax (börjar på 1).
-%   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10.
+%   3. Ingen punkt bättre än F0 än: nästa steg alphaMax/10 (om shrink = 1).
 %   4. Annars: ML-polynom (select_poly_degree) genom de giltiga punkterna
-%      i [0, alphaMax]; nästa punkt är polynomets maximum (find_step_length).
+%      i [0, alphaMax] (alla giltiga punkter om fitAll = 1); nästa punkt är
+%      polynomets maximum i [0, alphaMax] (find_step_length).
 %   5. Stopp när
 %        - lutningen i bästa punkten är liten, |S| <= c*|S0| (tidigast
-%          efter minEvals punkter),
-%        - maximum ligger närmare än dMin*alphaMax en redan mätt punkt
-%          (bästa eller inte),
+%          efter minEvals punkter; standard 1, alltså direkt),
+%        - maximum ligger närmare än dMin*alphaMax en redan mätt punkt,
 %        - maxEvals punkter är utvärderade.
 % Returnerar den giltiga punkten med störst F (alpha = 0 om ingen var
 % bättre än startpunkten).
 %
-% Utskrift: en tabellrad per punkt (alpha, F-F0, dF/dalpha, grad, nästa
+% Utskrift (bara om verbose = 1): en tabellrad per punkt (alpha, F-F0, dF/dalpha, grad, nästa
 % alpha, varför), sist varför sökningen stoppade och vilken punkt som valdes.
 %
 % evals: en kolumn per giltig punkt, startpunkten först. Ogiltiga punkter
@@ -41,10 +47,19 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   dMin      (1e-2)  avstånd relativt alphaMax som räknas som samma punkt
 %   c         (0.05)  lutningen räknas som liten när |S| <= c*|S0|
 %   maxEvals  (20)    högsta antal kalmanObj-körningar
-%   minEvals  (1)     stoppet på liten lutning gäller först efter så många punkter
+%   minEvals  (1)     stoppet på liten lutning gäller först efter så många
+%                     punkter. 1 påverkar ingenting (gäller direkt).
 %   alphaMin  (0.1)   kortaste första steg
 %   showDegree (0)    1: skriv gradvalet under varje tabellrad (LR för varje
 %                     prövat steg q -> q+1, sigmaF och sigmaG före och efter)
+%   fitAll    (0)     0: polynomet anpassas bara till giltiga punkter i
+%                     [0, alphaMax]. 1: alla giltiga punkter (utan NaN/Inf)
+%                     tas med, även de bortom alphaMax.
+%   shrink    (1)     1: ingen punkt bättre än F0 än ger nästa steg
+%                     alphaMax/10. 0: polynomet anpassas ändå (krymper bara
+%                     om färre än två giltiga punkter finns).
+%   verbose   (0)     0: ingen utskrift (kalmanOptimizeMain skriver en rad per
+%                     iteration). 1: tabellen och sammanfattningen nedan.
 
     if nargin < 8 || isempty(opts)
         opts = struct();
@@ -57,31 +72,42 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     evals.fitF = {};  evals.fitSlope = {};  evals.fitAlphaMax = {};
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = 1;                % övre gräns, krymper när en punkt bortom bästa är dålig
-    alphaNew = initial_step_length_main(g, d, opts.alphaMin);   % första punkten, i [alphaMin, 1]
+    alpha1 = initial_step_length_main(g, d, opts.alphaMin);     % första punkten, i [alphaMin, 1]
+    pending = initial_points_main(alpha1);   % förvalda punkter: alpha1, 3/4, 1/2, 1/4 av alpha1
     S0 = g'*d;                   % startlutning
     stop = false;
 
-    fprintf('  Linjesökning: dF/dalpha(0) = %+.3e\n', S0);
-    fprintf('    %2s  %-9s  %-10s  %-10s  %4s  %-9s  %s\n', ...
-            'nr', 'alpha', 'F-F0', 'dF/dalpha', 'grad', 'nästa', 'varför');
-
-    % Inget steg längs d kan ge högre F: hoppa över loopen och returnera
-    % startpunkten
-    nLoop = opts.maxEvals;
-    if ~(S0 > 0)
-        nLoop = 0;
-        stop = true;
-        evals.reason = 'dF/dalpha(0) <= 0, d är ingen uppåtriktning';
+    v = opts.verbose;            % 0: ingen utskrift alls (main skriver)
+    if v
+        fprintf('  Linjesökning: dF/dalpha(0) = %+.3e\n', S0);
+        fprintf('    %2s  %-9s  %-10s  %-10s  %4s  %-9s  %s\n', ...
+                'nr', 'alpha', 'F-F0', 'dF/dalpha', 'grad', 'nästa', 'varför');
     end
 
+%    % Inget steg längs d kan ge högre F: hoppa över loopen och returnera
+%    % startpunkten
+    nLoop = opts.maxEvals;
+%    if ~(S0 > 0)
+%        nLoop = 0;
+%        stop = true;
+%        evals.reason = 'dF/dalpha(0) <= 0, d är ingen uppåtriktning';
+%    end
+
     for k = 1:nLoop
+        % De förvalda punkterna mäts först, sedan bestämmer polynomet
+        if ~isempty(pending)
+            alphaNew = pending(1);
+            pending(1) = [];
+        end
         [fTry, gTry] = kalmanObj(x + alphaNew*d, K, mu, varInd);
         evals.X(:, end+1) = x + alphaNew*d;  evals.F(end+1) = fTry;  evals.G(:, end+1) = gTry;
         evals.Q(end+1) = NaN;  evals.AHat(end+1) = NaN;
         alphas(end+1) = alphaNew; %#ok<AGROW>
         % Första halvan av tabellraden skrivs nu, så att punkten syns även om
         % anpassningen kraschar; print_rest avslutar raden.
-        if ~(isfinite(fTry) && all(isfinite(gTry)))
+        if ~v
+            % ingen tabell
+        elseif ~(isfinite(fTry) && all(isfinite(gTry)))
             fprintf('    %2d  %.3e  %-10s  %-10s', k, alphaNew, 'NaN/Inf', '');
         else
             fprintf('    %2d  %.3e  %+.3e  %+.3e', k, alphaNew, fTry - f, gTry'*d);
@@ -101,19 +127,33 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             alphaMax = min(alphaMax, alphaNew);
         end
 
-        % Ingen förbättring än: krymp steget med faktor 10
-        if ~improved
-            alphaNew = alphaMax/10;
-            evals.AHat(end) = alphaNew;
-            print_rest([], alphaNew, 'krymp /10');
+        % Förvalda punkter kvar: mät nästa innan något polynom anpassas
+        if ~isempty(pending)
+            evals.AHat(end) = pending(1);
+            print_rest(v, [], pending(1), 'förvald punkt');
             continue
         end
 
-        % ML-polynom i t = alpha/alphaMax genom alla giltiga punkter i
-        % [0, alphaMax], även de sämre än F0. Punkter bortom alphaMax tas inte
-        % med: de ligger ofta tiopotenser bort, och polynomet följer då fallet
-        % ut mot dem i stället för toppen nära 0.
-        inFit = ok & alphas <= alphaMax*(1 + 1e-12);
+        % Ingen förbättring än: krymp steget med faktor 10 (om shrink = 1).
+        % Med shrink = 0 anpassas polynomet direkt, utom när färre än två
+        % giltiga punkter finns (då går ingen anpassning att göra).
+        if ~improved && (opts.shrink || nnz(ok) < 2)
+            alphaNew = alphaMax/10;
+            evals.AHat(end) = alphaNew;
+            print_rest(v, [], alphaNew, 'krymp /10');
+            continue
+        end
+
+        % ML-polynom i t = alpha/alphaMax genom de giltiga punkterna, även de
+        % sämre än F0. Med fitAll = 0 tas bara punkter i [0, alphaMax] med:
+        % punkter bortom alphaMax ligger ofta tiopotenser bort, och polynomet
+        % följer då fallet ut mot dem i stället för toppen nära 0. Med
+        % fitAll = 1 tas alla giltiga punkter med (t > 1 för dem bortom
+        % alphaMax); maximum söks ändå bara i [0, alphaMax].
+        inFit = ok;
+        if ~opts.fitAll
+            inFit = inFit & alphas <= alphaMax*(1 + 1e-12);
+        end
         t = alphas(inFit)/alphaMax;
         St = alphaMax*(evals.G(:, inFit)'*d);    % lutning dF/dt
         [q, fit, info] = select_poly_degree(t, evals.F(inFit), St);
@@ -136,12 +176,12 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         reason = stop_reason(k, alphas, evals, iBest, alphaHat, alphaMax, d, S0, opts);
         if ~isempty(reason)
             evals.reason = reason;
-            print_rest(q, [], 'stopp', degreeLine);
+            print_rest(v, q, [], 'stopp', degreeLine);
             stop = true;
             break
         end
         alphaNew = alphaHat;
-        print_rest(q, alphaNew, 'polynomets max', degreeLine);
+        print_rest(v, q, alphaNew, 'polynomets max', degreeLine);
     end
     if ~stop
         evals.reason = sprintf('maxEvals = %d punkter utvärderade', opts.maxEvals);
@@ -181,7 +221,9 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
     else
         chosen = 'valt startpunkten (ingen förbättring)';
     end
-    fprintf('  Stopp efter %d %s%s: %s\n  -> %s\n', n, word, invalidNote, evals.reason, chosen);
+    if v
+        fprintf('  Stopp efter %d %s%s: %s\n  -> %s\n', n, word, invalidNote, evals.reason, chosen);
+    end
 end
 
 function reason = stop_reason(k, alphas, evals, iBest, alphaHat, alphaMax, d, S0, opts)
@@ -202,11 +244,7 @@ function reason = stop_reason(k, alphas, evals, iBest, alphaHat, alphaMax, d, S0
     % nytt.
     [dist, i] = min(abs(alphaHat - alphas));     % närmaste mätta punkt
     if dist <= max(opts.dMin*alphaMax, 1e-12*alphaHat)
-        if i == iBest
-            reason = sprintf('polynomets max ligger nära den bästa punkten alpha = %.3g, redan utvärderad', alphas(i));
-        else
-            reason = sprintf('polynomets max ligger nära alpha = %.3g, redan utvärderad och inte bäst', alphas(i));
-        end
+        reason = sprintf('polynomets max ligger nära alpha = %.3g, redan utvärderad', alphas(i));
     end
 end
 
@@ -231,10 +269,13 @@ function s = describe_degree(info)
     end
 end
 
-function print_rest(q, alphaNext, why, degreeLine)
+function print_rest(v, q, alphaNext, why, degreeLine)
 % Avslutar tabellraden: polynomets grad, nästa alpha och varför.
 % Tomma q eller alphaNext skrivs som blanka. degreeLine (valfri) skrivs
-% på en egen rad under.
+% på en egen rad under. v = 0: skriv ingenting.
+    if ~v
+        return
+    end
     qStr = '';
     if ~isempty(q)
         qStr = sprintf('%d', q);
@@ -244,7 +285,7 @@ function print_rest(q, alphaNext, why, degreeLine)
         nextStr = sprintf('%.3e', alphaNext);
     end
     fprintf('  %4s  %-9s  %s\n', qStr, nextStr, why);
-    if nargin >= 4
+    if nargin >= 5
         fprintf('%s', degreeLine);
     end
 end
@@ -258,7 +299,7 @@ function opts = default_opts(opts)
 % Fyller i standardvärden. Okända fält ger fel, så att ett felstavat eller
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
-                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0);
+                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'fitAll', 0, 'shrink', 1, 'verbose', 0);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
