@@ -310,6 +310,50 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyTrue(all(evalsShrink.A >= 0 & evalsShrink.A <= 1));
             testCase.verifyTrue(all(evalsFixed.A >= 0 & evalsFixed.A <= 1));
         end
+
+        function usesPointsOutsideShrunkAlphaMax(testCase)
+            % Kvadratisk funktion med maximum vid alpha = 0.3.
+            K = @(x) deal( ...
+                -(x(1) - 0.3)^2, ...
+                [-2*(x(1) - 0.3); 0]);
+
+            x = [0; 0];
+            d = [1; 0];
+            [f, g] = K(x);
+
+            % Aktivera krympning av alphaMax.
+            [~, ~, ~, ~, evals] = runQuiet( ...
+                x, f, g, d, K, ...
+                struct('shrinkAlphaMax', 1, 'alphaMin', 1));
+
+            % Kontrollera den första polynomanpassningen.
+            alphaMax = evals.fitAlphaMax{1};
+            t = evals.fitAlpha{1};
+
+            % Sökintervallet ska ha krympt.
+            testCase.verifyLessThan(alphaMax, 1);
+
+            % Minst en mätpunkt ska ligga utanför
+            % det nya sökintervallet.
+            testCase.verifyTrue(any(t > 1));
+
+            % Alla fem initiala mätpunkter ska användas
+            % i den första polynomanpassningen.
+            testCase.verifyEqual(numel(t), 5);
+
+            % Kontrollera att även punkterna utanför
+            % alphaMax finns med med rätt koordinater.
+            testCase.verifyEqual( ...
+                t * alphaMax, evals.A(1:5), ...
+                'AbsTol', 1e-12);
+
+            % Kontrollera att funktionsvärdena
+            % från alla fem punkter används.
+            testCase.verifyEqual( ...
+                evals.fitF{1}, evals.F(1:5), ...
+                'AbsTol', 1e-12);
+        end
+
     end
 end
 
