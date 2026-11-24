@@ -1,4 +1,4 @@
-function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, opts)
+function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, opts, isSimple)
 % line_search_main - Linjesökning med ML-polynom längs d.
 %
 % Samma in- och utdata som line_search.m (plus opts), så att
@@ -65,10 +65,17 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %   verbose   (0)     0: ingen utskrift (kalmanOptimizeMain skriver en rad per
 %                     iteration). 1: tabellen och sammanfattningen nedan.
 
+    
+
     if nargin < 8 || isempty(opts)
         opts = struct();
     end
     opts = default_opts(opts);
+
+    if isSimple
+        [alpha, xNew, fNew, gNew, evals] = simple_line_search(x, f, g, d, K, mu, varInd);
+        return
+    end
 
     evals.X = x;  evals.F = f;  evals.G = g;
     evals.fit = {};  evals.fitInfo = {};  evals.fitAlpha = {};

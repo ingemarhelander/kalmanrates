@@ -34,18 +34,23 @@ while true
 
     %Find search direction d
     [d, D] = find_search_direction(x, g, xLbd, D);
+    D
+
+    %Make sure the last n search direction is stored as a base B and run noisy optimization
+    [D, B] = store_direction(D, d, noisy_size);
 
     %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
+    if size(D, 2) < noisy_size
+        [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 0);
+    else
+        [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 1);
+    end
     degreeLog = store_degree_log(degreeLog, evals, iter, false);
 
     %Print and update history
     history.stepSizes(end+1, 1) = alpha;
     evalHist = store_evals(evalHist, evals, noisy_size);
     if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
-
-    %Make sure the last n search direction is stored as a base B and run noisy optimization
-    [D, B] = store_direction(D, d, noisy_size);
 
     %Iteration done, update counter and x f and g
     xStart = x;
@@ -57,7 +62,7 @@ while true
         if ~any(d_prime)
             fprintf('Denoising produced no feasible direction; skipping its line search.\n');
         else
-            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd, 0);
             if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
             degreeLog = store_degree_log(degreeLog, evals, iter, true);
             print_iteration(iter, alpha, f, fNew, g, gNew, evals);
@@ -130,8 +135,8 @@ function lineSearchFcn = select_line_search(config)
 
     switch lower(method)
         case 'polynomial'
-            lineSearchFcn = @(x, f, g, d, K, mu, varInd) ...
-                line_search_main(x, f, g, d, K, mu, varInd, lsOpts);
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd, isSimple) ...
+                line_search_main(x, f, g, d, K, mu, varInd, lsOpts, isSimple);
         case 'backtracking'
             if ~isempty(fieldnames(lsOpts))
                 warning('ls_ options are ignored by the backtracking line search.');
