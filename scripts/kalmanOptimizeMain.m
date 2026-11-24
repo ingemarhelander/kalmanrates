@@ -1,3 +1,4 @@
+%% 
 % kalmanOptimizeMain.m
 % Gradient ascent for the Kalman objective, with polynomial line search
 % (line_search_main) or backtracking (line_search), chosen in the config.

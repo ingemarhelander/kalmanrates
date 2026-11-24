@@ -29,8 +29,13 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
         mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
+    checkSpread = true;
+    if isfield(config, 'denoise_check_spread')
+        checkSpread = config.denoise_check_spread;
+    end
+
     [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
-        X, F, G, B, config.fixed_or_exact, weights);
+        X, F, G, B, config.fixed_or_exact, weights, logical(checkSpread));
     if ~ok
         fprintf('[denoise] The sample points do not determine the quadratic model; skipping.\n');
         d_prime = zeros(size(x));
@@ -61,8 +66,58 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
 end
 
 
-function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method, weights)
-% Project X and G onto the span of B to get a smaller problem.
+function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method, weights, checkSpread)
+% Optionally remove poorly explored directions before projecting X and G.
+    if checkSpread
+        originalDimension = size(B, 1);
+        sampleCoordinates = B' * X;
+        centeredCoordinates = sampleCoordinates - mean(sampleCoordinates, 2);
+        directionSpread = sqrt(sum(centeredCoordinates.^2, 2));
+
+        % Match the 1e-12 conditioning threshold used for S_bar: a direction
+        % whose spread is below this fraction of the largest is not resolved.
+        minimumSpreadRatio = sqrt(1e-12);
+        if isempty(directionSpread)
+            maximumSpread = 0;
+        else
+            maximumSpread = max(directionSpread);
+        end
+        minimumSpread = minimumSpreadRatio * maximumSpread;
+        if maximumSpread == 0
+            retained = false(size(directionSpread));
+        else
+            retained = directionSpread > minimumSpread;
+        end
+
+        removedCount = nnz(~retained);
+        if removedCount > 0
+            fprintf('\n========== DENOISE: REMOVING POORLY SPREAD DIRECTIONS ==========\n');
+            fprintf('Removed %d of %d basis directions; spread cutoff is %.3e ', ...
+                removedCount, size(B, 2), minimumSpread);
+            fprintf('(relative cutoff %.1e of maximum spread %.3e).\n', ...
+                minimumSpreadRatio, maximumSpread);
+            removedDirections = find(~retained);
+            for i = 1:numel(removedDirections)
+                direction = removedDirections(i);
+                fprintf('  B(:,%d): spread %.3e did not exceed cutoff %.3e.\n', ...
+                    direction, directionSpread(direction), minimumSpread);
+            end
+            fprintf('===============================================================\n\n');
+        end
+
+        if ~any(retained)
+            fprintf('[denoise] no basis directions remain after spread check; skipping.\n');
+            Q = NaN(originalDimension, originalDimension);
+            q = NaN(originalDimension, 1);
+            c = NaN;
+            e = NaN(originalDimension + 1, size(X, 2));
+            ok = false;
+            return;
+        end
+
+        B = B(:, retained);
+    end
+
     Z = B' * X;
     Gsmall = B' * G;
     fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
@@ -227,7 +282,19 @@ function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method, wei
     A_all = A_all .* s';
     S_bar = S_bar .* (s * s');
     [R, notPosDef] = chol(S_bar);
-    if notPosDef || rcond(S_bar) < 1e-12
+    if notPosDef
+        fprintf('\n========== DENOISE: QUADRATIC MODEL REJECTED ==========\n');
+        fprintf('Reason: Cholesky factorization of scaled S_bar failed; S_bar is not positive definite.\n');
+        fprintf('=======================================================\n\n');
+        return;
+    end
+
+    reciprocalCondition = rcond(S_bar);
+    if reciprocalCondition < 1e-12
+        fprintf('\n========== DENOISE: QUADRATIC MODEL REJECTED ==========\n');
+        fprintf('Reason: rcond(S_bar) = %.3e is below the required threshold 1.0e-12.\n', ...
+            reciprocalCondition);
+        fprintf('=======================================================\n\n');
         return;
     end
 
