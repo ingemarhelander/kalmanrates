@@ -163,17 +163,22 @@ function testCollinearSamples(testCase)
     x = X(:, end);
     config.fixed_or_exact = 1;
     config.denoise_check_spread = true;
+    config.denoise_spread_removal_method = 0;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
-    d = denoise(x, F(end), G(:, end), ...
-        eye(2), {evals}, 2, [], [], [], ...
-        -inf(2,1), config, weights);
+    [diagnostics, d] = evalc(['denoise(x, F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2,1), config, weights)']);
 
     % The unsupported direction is removed, while the supported direction
     % still provides a usable search direction in the original space.
     verifyTrue(testCase, all(isfinite(d)));
     verifyGreaterThan(testCase, norm(d), 0);
     verifyLessThan(testCase, abs(d(2)), 1e-12);
+    verifyTrue(testCase, contains(diagnostics, ...
+        'Full-basis S_bar is ill-conditioned'));
+    verifyTrue(testCase, contains(diagnostics, 'SPREAD-BASED REDUCTION'));
+    verifyTrue(testCase, contains(diagnostics, ...
+        'retrying approximation in size(Z)=[1 5]'));
 
     % With filtering disabled, keep the full basis and reject the
     % underdetermined two-dimensional quadratic model.
@@ -182,10 +187,20 @@ function testCollinearSamples(testCase)
         eye(2), {evals}, 2, [], [], [], ...
         -inf(2,1), config, weights);
     verifyEqual(testCase, dWithoutSpreadCheck, zeros(2, 1));
+
+    % The SVD-based removal mode is selectable from the config as well.
+    config.denoise_check_spread = true;
+    config.denoise_spread_removal_method = 1;
+    [svdDiagnostics, dSvd] = evalc(['denoise(x, F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2,1), config, weights)']);
+    verifyTrue(testCase, all(isfinite(dSvd)));
+    verifyGreaterThan(testCase, norm(dSvd), 0);
+    verifyTrue(testCase, contains(svdDiagnostics, 'SVD directions'));
 end
 
-function testPoorlySpreadDirectionIsRemoved(testCase)
-    % The second direction has nonzero but negligible spread.
+function testPoorSpreadIsKeptWhenOriginalSbarIsWellConditioned(testCase)
+    % The second direction has little spread, but the original S_bar is
+    % well-conditioned, so the spread filter should not remove it.
     X = [-2 -1 0 1 2;
          1e-8 * [0 1 -1 1 0]];
 
@@ -204,13 +219,13 @@ function testPoorlySpreadDirectionIsRemoved(testCase)
     config.fixed_or_exact = 1;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
-    d = denoise(X(:, end), F(end), G(:, end), ...
-        eye(2), {evals}, 2, [], [], [], ...
-        -inf(2, 1), config, weights);
+    [diagnostics, d] = evalc(['denoise(X(:, end), F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2, 1), config, weights)']);
 
     verifyTrue(testCase, all(isfinite(d)));
     verifyGreaterThan(testCase, norm(d), 0);
-    verifyLessThan(testCase, abs(d(2)), 1e-12);
+    verifyFalse(testCase, contains(diagnostics, 'SPREAD-BASED REDUCTION'));
+    verifyTrue(testCase, contains(diagnostics, 'size(Z)=[2 5]'));
 end
 
 function testMultipleEvaluationHistories(testCase)
