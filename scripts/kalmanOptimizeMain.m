@@ -85,6 +85,7 @@ while true
         break;
     end
 end
+history = update_history(history, x, f, g); % Final point
 
 %% Out-of-sample evaluation with the optimized parameters
 if ~isempty(periods.outOfSampleStart)
