@@ -263,6 +263,43 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                 'AbsTol', 1e-12);
         end
 
+        function shrinkAlphaMaxCanBeDisabled(testCase)
+            % Kvadratisk funktion med maximum vid alpha = 0.3.
+            K = @(x) deal( ...
+                -(x(1) - 0.3)^2, ...
+                [-2*(x(1) - 0.3); 0]);
+
+            x = [0; 0];
+            d = [1; 0];
+            [f, g] = K(x);
+
+            % Kör med krympning aktiverad
+            [~, ~, fShrink, ~, evalsShrink] = runQuiet( ...
+                x, f, g, d, K, ...
+                struct('shrinkAlphaMax', 1));
+
+            % Kör med krympning avaktiverad
+            [~, ~, fFixed, ~, evalsFixed] = runQuiet( ...
+                x, f, g, d, K, ...
+                struct('shrinkAlphaMax', 0));
+
+            % Med krympning ska intervallet minska.
+            testCase.verifyTrue( ...
+                any([evalsShrink.fitAlphaMax{:}] < 1));
+
+            % Utan krympning ska alphaMax alltid vara 1.
+            testCase.verifyEqual( ...
+                [evalsFixed.fitAlphaMax{:}], ...
+                ones(size([evalsFixed.fitAlphaMax{:}])));
+
+            % Båda metoderna ska hitta en förbättring.
+            testCase.verifyGreaterThan(fShrink, f);
+            testCase.verifyGreaterThan(fFixed, f);
+
+            % Alla utvärderade steglängder ska ligga inom [0, 1].
+            testCase.verifyTrue(all(evalsShrink.A >= 0 & evalsShrink.A <= 1));
+            testCase.verifyTrue(all(evalsFixed.A >= 0 & evalsFixed.A <= 1));
+        end
     end
 end
 
