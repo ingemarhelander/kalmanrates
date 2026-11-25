@@ -1,6 +1,7 @@
 % plots.m
 % Figure 1: objective value and gradient norm after each outer iteration of
 %           kalmanOptimizeMain, on a shared x-axis. Iteration 0 is the start point.
+%           One curve per start point (numStarts); the best run is drawn thicker.
 % Figure 2: market quotes and the model's one-day-ahead prediction for one day
 %           at a time (slider), and histograms of the daily error (RMSE) in the
 %           optimization period and the out-of-sample period.
@@ -11,16 +12,33 @@ burnIn = 20; % First filter days left out of the histograms (start-up transient)
 
 R = load(dataPath('kalmanOptimizeResult.mat'));
 h = R.history;
-it = 0:numel(h.fvals)-1;
+if isfield(h, 'runs')
+    runs = h.runs;
+    best = h.bestRunIndex;
+else % result saved before multistart: one run
+    runs = struct('fvals', h.fvals, 'normOfgrads', h.normOfgrads);
+    best = 1;
+end
 
 tl = tiledlayout(figure('Name', 'Konvergens'), 2, 1, 'TileSpacing', 'compact');
-ax1 = nexttile(tl);
-plot(ax1, it, h.fvals, 'o-');
+ax1 = nexttile(tl); hold(ax1, 'on');
+ax2 = nexttile(tl); hold(ax2, 'on');
+set(ax2, 'YScale', 'log');
+colors = lines(numel(runs));
+for k = 1:numel(runs)
+    it = 0:numel(runs(k).fvals)-1;
+    name = sprintf('start %d', k);
+    width = 1;
+    if k == best
+        name = [name ' (bäst)'];
+        width = 2.5;
+    end
+    plot(ax1, it, runs(k).fvals, 'o-', 'Color', colors(k,:), 'LineWidth', width, 'DisplayName', name);
+    plot(ax2, it, runs(k).normOfgrads, 'o-', 'Color', colors(k,:), 'LineWidth', width, 'DisplayName', name);
+end
 ylabel(ax1, 'målfunktion f');
 grid(ax1, 'on');
-
-ax2 = nexttile(tl);
-semilogy(ax2, it, h.normOfgrads, 'o-');
+legend(ax1, 'Location', 'best');
 ylabel(ax2, '||g||');
 xlabel(ax2, 'yttre iteration');
 grid(ax2, 'on');

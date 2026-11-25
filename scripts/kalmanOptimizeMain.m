@@ -38,13 +38,26 @@ fprintf('Number of start points: %d\n', numStarts);
 
 % The first run uses the configured start point; subsequent starts are
 % multiplicatively perturbed and projected onto the configured lower bounds.
+% If a perturbed point gives a non-finite objective, the perturbation is
+% halved (same random direction) until the objective is finite.
 startPoints = repmat(x, 1, numStarts);
 for k = 2:numStarts
-    startPoints(:, k) = x .* exp( ...
-        config.startPerturbation .* randn(size(x)));
-    startPoints(:, k) = max(startPoints(:, k), xLbd);
+    z = randn(size(x));
+    s = config.startPerturbation;
+    for attempt = 1:20
+        startPoints(:, k) = max(x .* exp(s .* z), xLbd);
+        [fk, gk] = kalmanObj(startPoints(:, k), K, mu, varInd);
+        if (isfinite(fk) && all(isfinite(gk))) || attempt == 20
+            break;  % after 20 halvings the point is ~x; run_single_start skips it if still invalid
+        end
+        s = s / 2;
+    end
+    fprintf('Start point %d: perturbation %.3g', k, s);
+    if s < config.startPerturbation
+        fprintf(' (halved %d times to get a finite objective)', attempt - 1);
+    end
+    fprintf('\n');
 end
-history = update_history(history, x, f, g); % Final point
 
 results = cell(numStarts, 1);
 for k = 1:numStarts
@@ -74,6 +87,9 @@ if ~isempty(periods.outOfSampleStart)
 end
 history.bestRunIndex = bestIndex;
 history.runObjectives = scores;
+% f and ||g|| per iteration for every start, for the convergence plot in plots.m
+history.runs = cellfun(@(r) struct('fvals', r.history.fvals, ...
+    'normOfgrads', r.history.normOfgrads), results);
 save_result(bestResult.xFinal, varInd, data.K, periods, history);
 
 %% ------------------------------ Functions -------------------------------
@@ -150,6 +166,8 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
             break;
         end
     end
+
+    history = update_history(history, x, f, g); % final point, so the plot ends at fFinal
 
     result.xInit = x0;
     result.xFinal = x;
