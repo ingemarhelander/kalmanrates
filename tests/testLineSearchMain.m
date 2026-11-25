@@ -70,6 +70,26 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                 contains(evals.reason, 'är liten'), evals.reason);
         end
 
+        function newtonFindsMaximumWithLittleNoise(testCase)
+            % Samma som ovan med ls_maxMethod newton
+            rng(1);
+            K = objective(1e-3, 1e-3);
+            [f0, g0] = K([0; 0]);
+            opts.maxMethod = 'newton';
+            [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, opts);
+            testCase.verifyGreaterThan(fNew, f0);
+            testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.05);
+            testCase.verifyEqual(numel(unique(evals.A)), numel(evals.A));
+        end
+
+        function unknownMaxMethodGivesError(testCase)
+            K = objective(0.05, 0.1);
+            [f0, g0] = K([0; 0]);
+            opts.maxMethod = 'fzero';
+            testCase.verifyError(@() line_search_main([0; 0], f0, g0, [2; 0.5], K, [], [], opts), ...
+                ?MException);
+        end
+
         function neverRepeatsAnAlpha(testCase)
             % Deterministisk målfunktion, som riktiga Kalman: samma alpha
             % ger samma värden. Ingen alpha får utvärderas två gånger.

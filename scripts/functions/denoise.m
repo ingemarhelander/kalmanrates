@@ -66,10 +66,26 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     end
     d_prime = q / qNorm;
 
-    % Ascent direction: if g'*d_prime <= 0, take the convex combination
-    % 0.5*(d_prime + g/||g||), whose inner product with g/||g|| is
-    % 0.5*(g'*d_prime/||g|| + 1) > 0 (unless d_prime = -g/||g||, giving 0).
-    if g' * d_prime <= 0 && any(g), d_prime = 0.5 * (d_prime + g / norm(g)); end
+    % Ascent direction: if the cosine of the angle between d_prime and g is
+    % below minCos, rotate d_prime towards g in the plane spanned by d_prime
+    % and g, just far enough that the cosine is exactly minCos. The result
+    % is the first such direction on the convex combinations from d_prime
+    % to g/||g||, normalized.
+    minCos = 1e-7;
+    if isfield(config, 'denoise_min_cos_angle')
+        minCos = config.denoise_min_cos_angle;
+    end
+    if any(g)
+        gHat = g / norm(g);
+        if gHat' * d_prime < minCos
+            p = d_prime - (gHat' * d_prime) * gHat;   % part of d_prime orthogonal to g
+            if norm(p) > 0
+                d_prime = minCos * gHat + sqrt(1 - minCos^2) * p / norm(p);
+            else
+                d_prime = gHat;                       % d_prime = -gHat: no plane, use g
+            end
+        end
+    end
 
     % Make sure tyhe search direction d_prime is feasible with respect to the lower bounds xLbd.
     alphaLbd = ones(size(x)) * inf;

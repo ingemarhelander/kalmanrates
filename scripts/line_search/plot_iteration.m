@@ -26,7 +26,9 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
 %       evals    utdata från line_search_main
 %       fNew     funktionsvärde efter steget
 %       gNew     gradient efter steget
-%       h        (1e-3) samma som ls_h, används för att hitta polynomets max
+%       h        (1e-3) samma som ls_h. Används bara om evals saknar fitTHat
+%                (maximum som line_search_main valde, med grid eller newton);
+%                då räknas maximum om med grid.
 %       label    (valfri) text som läggs till i flikens namn, t.ex. 'denoise',
 %                så att två sökningar i samma iteration går att skilja åt
 
@@ -92,7 +94,7 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
         for k = 1:nFit
             fit  = evals.fit{k};
             aMax = evals.fitAlphaMax{k};
-            tHat = find_step_length(fit, h, 1);
+            tHat = chosen_max(evals, k, h);
             lw = 1;
             if k == nFit, lw = 2.5; end
             tt = tGrid(k);
@@ -128,7 +130,7 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
         for k = 1:nFit
             fit  = evals.fit{k};
             aMax = evals.fitAlphaMax{k};
-            tHat = find_step_length(fit, h, 1);
+            tHat = chosen_max(evals, k, h);
             lw = 1;
             if k == nFit, lw = 2.5; end
             tt = tGrid(k);
@@ -172,6 +174,16 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
     tabs.SelectedTab = tab;                   % visa den nya fliken
     drawnow;
     wait_if_paused(fig);
+end
+
+function tHat = chosen_max(evals, k, h)
+% Polynomets max i anpassning k (i t), som line_search_main valde det.
+% Äldre evals utan fitTHat: räkna om med grid.
+    if isfield(evals, 'fitTHat') && numel(evals.fitTHat) >= k
+        tHat = evals.fitTHat{k};
+    else
+        tHat = find_step_length(evals.fit{k}, h, 1);
+    end
 end
 
 function [fig, tabs] = get_figure()

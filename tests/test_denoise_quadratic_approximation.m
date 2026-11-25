@@ -94,12 +94,48 @@ function testDistanceWeightingFavorsNearbySamples(testCase)
     % a positive slope, so the local weighting should select the former.
     verifyLessThan(testCase, d, 0);
 
+    % Weak weighting gives the model direction +1, opposite to g(0) = -1.
+    % The ascent correction is switched off (cos >= -1 always) so that only
+    % the weighting is tested; see testAscentCorrection* for the correction.
     config.denoise_distance_weight_scale = 1000;
+    config.denoise_min_cos_angle = -1;
     dWeakWeighting = denoise(0, f(0), g(0), 1, {evals}, 1, ...
         [], [], [], -inf, config, weights);
-    % Weak weighting gives the model direction +1, opposite to g(0) = -1.
-    % The ascent correction averages it with g/|g|, which cancels to zero.
-    verifyEqual(testCase, dWeakWeighting, 0, 'AbsTol', 1e-12);
+    verifyGreaterThan(testCase, dWeakWeighting, 0);
+end
+
+function testAscentCorrectionOppositeDirection(testCase)
+    % Same 1-D data: the model direction +1 is opposite to g(0) = -1, so
+    % there is no plane to rotate in and the correction returns g/|g|.
+    xSamples = [-2 -1 -0.1 -0.05 -0.02 -0.01 ...
+        0.01 0.02 0.05 0.1 1 2 0];
+    f = @(x) x.^3 - x;
+    g = @(x) 3 * x.^2 - 1;
+    evals = struct('X', xSamples, 'F', f(xSamples), 'G', g(xSamples));
+    config = struct('fixed_or_exact', 1, 'denoise_distance_weight_scale', 1000);
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+    d = denoise(0, f(0), g(0), 1, {evals}, 1, [], [], [], -inf, config, weights);
+    verifyEqual(testCase, d, -1, 'AbsTol', 1e-12);
+end
+
+function testAscentCorrectionExactAngle(testCase)
+    % 2-D linear function with gradient [1; 0] at every sample, but the
+    % current (noisy) gradient is [-1; 0.5]: the model direction is not an
+    % ascent direction for it and must be rotated to cos(angle) = minCos.
+    X = [0 1 -1 0  0 0.5 -0.5;
+         0 0  0 1 -1 0.5 -0.5];
+    evals = struct('X', X, 'F', X(1, :), 'G', repmat([1; 0], 1, size(X, 2)));
+    x = [0; 0];
+    gNoisy = [-1; 0.5];
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+    for minCos = [1e-7 0.1 0.5]
+        config = struct('fixed_or_exact', 1, 'denoise_min_cos_angle', minCos);
+        d = denoise(x, 0, gNoisy, eye(2), {evals}, 2, [], [], [], -inf(2, 1), ...
+            config, weights);
+        cosAngle = gNoisy' * d / (norm(gNoisy) * norm(d));
+        verifyEqual(testCase, cosAngle, minCos, 'AbsTol', 1e-12);
+        verifyEqual(testCase, norm(d), 1, 'AbsTol', 1e-12);
+    end
 end
 
 function testInsufficientSamples(testCase)
