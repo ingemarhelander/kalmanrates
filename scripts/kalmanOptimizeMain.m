@@ -156,7 +156,11 @@ end
 
 function [D, B] = store_direction(D, d, noisy_size)
 % Keeps only the noisy_size most recent search directions (one per column).
-    D = [D, d]; % adds last search direction to matrix with all previous search directions
+    if isempty(D)
+        D = d;
+    else
+        D = [D, d];
+    end
     if size(D, 2) >= noisy_size
         B = D(:, end-noisy_size+1:end);
     else
