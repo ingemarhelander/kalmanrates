@@ -66,6 +66,11 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     end
     d_prime = q / qNorm;
 
+    % Ascent direction: if g'*d_prime <= 0, take the convex combination
+    % 0.5*(d_prime + g/||g||), whose inner product with g/||g|| is
+    % 0.5*(g'*d_prime/||g|| + 1) > 0 (unless d_prime = -g/||g||, giving 0).
+    if g' * d_prime <= 0 && any(g), d_prime = 0.5 * (d_prime + g / norm(g)); end
+
     % Make sure tyhe search direction d_prime is feasible with respect to the lower bounds xLbd.
     alphaLbd = ones(size(x)) * inf;
     hitsBound = (d_prime < 0) & (xLbd ~= -inf);

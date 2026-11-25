@@ -97,7 +97,9 @@ function testDistanceWeightingFavorsNearbySamples(testCase)
     config.denoise_distance_weight_scale = 1000;
     dWeakWeighting = denoise(0, f(0), g(0), 1, {evals}, 1, ...
         [], [], [], -inf, config, weights);
-    verifyGreaterThan(testCase, dWeakWeighting, 0);
+    % Weak weighting gives the model direction +1, opposite to g(0) = -1.
+    % The ascent correction averages it with g/|g|, which cancels to zero.
+    verifyEqual(testCase, dWeakWeighting, 0, 'AbsTol', 1e-12);
 end
 
 function testInsufficientSamples(testCase)
