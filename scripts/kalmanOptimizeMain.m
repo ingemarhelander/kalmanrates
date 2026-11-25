@@ -37,6 +37,27 @@ while true
 
     %Line search to find length of step and new X
     [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
+
+    % Experimentell polynomutvidgning.
+    % Resultatet används inte för att ändra optimeringens steg.
+    % Experimentell polynomutvidgning
+    extensionOpts.startAlpha = 0.95;
+    extensionOpts.derivativeThreshold = 1e6;
+    extensionOpts.stepScale = 0.02;
+    extensionOpts.minStep = 1e-6;
+    extensionOpts.maxStep = 0.05;
+    extensionOpts.maxEvals = 50;
+
+    if isfield(evals, 'fit') && ~isempty(evals.fit)
+
+        [extendedFit, extendedEvals] = extend_polynomial_fit( ...
+            x, d, K, mu, varInd, evals, extensionOpts);
+
+        % Visa jämförelsen
+        plot_polynomial_extension( ...
+            evals, extendedEvals, extendedFit, d, iter);
+    end
+
     degreeLog = store_degree_log(degreeLog, evals, iter, false);
 
     %Print and update history
