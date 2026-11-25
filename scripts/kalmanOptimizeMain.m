@@ -1,3 +1,4 @@
+%% 
 % kalmanOptimizeMain.m
 % Gradient ascent for the Kalman objective, with polynomial line search
 % (line_search_main) or backtracking (line_search), chosen in the config.
@@ -64,7 +65,6 @@ while true
             [x, f, g] = update_step(xNew, fNew, gNew);
             [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
         end
-        fprintf('Denoising done \n')
     end
     
     iter = iter + 1;

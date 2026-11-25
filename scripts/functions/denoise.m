@@ -11,10 +11,6 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     % Normalize the columns of B to get an orthonormal basis for the span of the past search directions.
     B = B ./ columnNorms;
 
-    fprintf('\nNoisy optimization: last %d search directions \n', noisy_size);
-    %fprintf('denoise: evalhist has %d steps, evaluations per step = [%s], total = %d \n', ...
-    %    numel(evalHist), num2str(cellfun(@(e) size(e.X,2), evalHist)), sum(cellfun(@(e) size(e.X,2), evalHist)))
-
     % Get the X, F andf G values from the evalHist.
     X = [];
     F = [];
@@ -26,13 +22,20 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     end
     % Eval j corresponds to X(:,j), F(j) and G(:,j)
 
-    fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
-        mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
+    checkSpread = true;
+    if isfield(config, 'denoise_check_spread')
+        checkSpread = config.denoise_check_spread;
+    end
+
+    spreadRemovalMethod = 0;
+    if isfield(config, 'denoise_spread_removal_method')
+        spreadRemovalMethod = config.denoise_spread_removal_method;
+    end
 
     [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
-        X, F, G, B, config.fixed_or_exact, weights);
+        X, F, G, B, config.fixed_or_exact, weights, ...
+        logical(checkSpread), double(spreadRemovalMethod));
     if ~ok
-        fprintf('[denoise] The sample points do not determine the quadratic model; skipping.\n');
         d_prime = zeros(size(x));
         return;
     end
@@ -61,175 +64,231 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
 end
 
 
-function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace(X, F, G, B, method, weights)
-% Project X and G onto the span of B to get a smaller problem.
+function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
+    X, F, G, B, method, weights, checkSpread, spreadRemovalMethod)
+% Build S_bar for the full basis first. Only inspect sample spread and retry
+% in a smaller subspace when the full-basis system cannot be used reliably.
+    originalDimension = size(B, 1);
+    originalB = B;
+    initialBasisDimension = size(B, 2);
+    removedDimensions = 0;
     Z = B' * X;
     Gsmall = B' * G;
-    fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
-        mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
-    %Call the function that computes the quadratic approximation.
-    [Qsmall, qsmall, c, esmall, ok] = compute_quadratic_approximation( ...
-        Z, F, Gsmall, method, weights);
+    [modelData, ok, illConditioned] = ...
+        prepare_quadratic_approximation(Z, weights);
+    originalModelData = modelData;
+    originalOk = ok;
+    originalIllConditioned = illConditioned;
 
-
-    fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
-        mat2str(size(Qsmall)), mat2str(size(qsmall)), mat2str(size(c)), mat2str(size(esmall)));
-
-    % Transform the small quadratic model back to the original space.
-    Q = B * Qsmall * B';
-    q = B * qsmall;
-    e = [esmall(1, :); B * esmall(2:end, :)];
-end
-
-
-function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method, weights)
-% COMPUTE_QUADRATIC_APPROXIMATION  Fit one quadratic model to noisy f and g.
-%
-%   Inputs
-%     X : n x m   the m sample points (one per column)
-%     F : 1 x m   noisy function values f_i
-%     G : n x m   noisy gradients g_i (one per column)
-%
-%   Outputs
-%     Q : n x n   Hessian of the model
-%     q : n x 1   gradient of the model at xbar
-%     c : scalar  value of the model at xbar
-%     e : (1+n) x m  noise terms. Row 1 is e_i (function noise),
-%                    rows 2..n+1 are ebar_i (gradient noise).
-%
-%   The model is centred at xbar = last column of X, and
-%       f_i = 1/2 dx_i' Q dx_i + q' dx_i + c + e_i + xi_i
-%       g_i = Q dx_i + q + ebar_i + xibar_i
-
-    % ------------------------------------------------------------------
-    % 0. Sizes and shifted points
-    % ------------------------------------------------------------------
-    n = size(X, 1);            % dimension of the space
-    m = size(X, 2);            % number of sample points
-
-    % Shift all points so that xbar (the last point) is the origin.
-    deltaX = X - X(:, end);    % column i is dx_i = x_i - xbar
-
-    % Number of unique elements in the symmetric matrix Q.
-    nVech = n * (n + 1) / 2;
-
-    % Total number of unknowns in y = [vech(Q); q; c].
-    p = nVech + n + 1;
-
-    % ------------------------------------------------------------------
-    % 0b. Taylor-error weights are configured by the caller.
-    % ------------------------------------------------------------------
-    % w_xi(i)     : penalty on the Taylor error xi_i in the function value
-    % wbar_xi(i)  : penalty on the Taylor error xibar_i in the gradient
-    % w_e(i)      : penalty on the noise e_i in the function value
-    % wbar_e(i)   : penalty on the noise ebar_i in the gradient
-    w_xi    = ones(1, m) * weights.w_xi;
-    wbar_xi = ones(1, m) * weights.wbar_xi;
-    w_e     = ones(1, m);
-    wbar_e  = ones(1, m);
-
-    % Combined weights from Step 7:  w_i = w_e_i + w_xi_i
-    w    = w_e    + w_xi;
-    wbar = wbar_e + wbar_xi;
-
-    % ------------------------------------------------------------------
-    % Step 1: Compact notation
-    % ------------------------------------------------------------------
-
-    % --- 1a. Duplication matrix B, defined by vec(Q) = B * vech(Q) -----
-    % vech stacks the lower triangle of Q column by column.
-    B = zeros(n * n, nVech);
-
-    k = 0;                                % running index into vech(Q)
-    for col = 1:n
-        for row = col:n                   % lower triangle: row >= col
-            k = k + 1;
-
-            % Position of Q(row, col) inside vec(Q) (column-major)
-            idxLower = (col - 1) * n + row;
-
-            % Position of the mirrored element Q(col, row) inside vec(Q)
-            idxUpper = (row - 1) * n + col;
-
-            % Both positions in vec(Q) take their value from vech(Q)(k)
-            B(idxLower, k) = 1;
-            B(idxUpper, k) = 1;
+    if (~ok || illConditioned) && checkSpread
+        [reducedB, removedCount] = ...
+            remove_poorly_spread_directions(X, B, spreadRemovalMethod);
+        if removedCount > 0
+            removedDimensions = removedCount;
+            if size(reducedB, 2) == 0
+                ok = false;
+                if originalOk
+                    B = originalB;
+                    modelData = originalModelData;
+                    ok = true;
+                    illConditioned = originalIllConditioned;
+                    removedDimensions = 0;
+                end
+            else
+                reducedZ = reducedB' * X;
+                reducedGsmall = reducedB' * G;
+                [reducedModelData, reducedOk, reducedIllConditioned] = ...
+                    prepare_quadratic_approximation(reducedZ, weights);
+                if reducedOk
+                    B = reducedB;
+                    Z = reducedZ;
+                    Gsmall = reducedGsmall;
+                    modelData = reducedModelData;
+                    ok = true;
+                    illConditioned = reducedIllConditioned;
+                elseif originalOk
+                    B = originalB;
+                    modelData = originalModelData;
+                    ok = true;
+                    illConditioned = originalIllConditioned;
+                    removedDimensions = 0;
+                else
+                    B = reducedB;
+                    Z = reducedZ;
+                    Gsmall = reducedGsmall;
+                    modelData = reducedModelData;
+                    ok = false;
+                    illConditioned = false;
+                end
+            end
         end
     end
 
-    % --- 1b. Build a_i (p x 1) and A_i (n x p) for every point ---------
-    % a_i  such that  1/2 dx' Q dx + q' dx + c  =  a_i' * y
-    % A_i  such that  Q dx + q                  =  A_i * y
-    a_all = zeros(p, m);         % column i is a_i
-    A_all = zeros(n, p, m);      % page i is A_i
-
-    for i = 1:m
-
-        dx = deltaX(:, i);       % dx_i as a column vector
-
-        % ---- a_i = [ B' * vec(1/2 dx dx') ; dx ; 1 ] ----
-        outerProduct = dx * dx';                  % n x n matrix dx dx'
-        halfOuter    = 0.5 * outerProduct;        % 1/2 dx dx'
-        halfOuterVec = halfOuter(:);              % vec(.), n^2 x 1
-        topPart      = B' * halfOuterVec;         % nVech x 1
-
-        a_i = [ topPart ;
-                dx      ;
-                1       ];
-
-        a_all(:, i) = a_i;
-
-        % ---- A_i = [ Atilde_i * B , I , 0 ] ----
-        % Q*dx = kron(dx', I_n) * vec(Q), so Atilde_i = kron(dx', I_n).
-        Atilde_i = kron(dx', eye(n));             % n x n^2
-
-        A_i = [ Atilde_i * B , ...                % n x nVech
-                eye(n)       , ...                % n x n  (picks out q)
-                zeros(n, 1) ];                    % n x 1  (c does not enter)
-
-        A_all(:, :, i) = A_i;
+    if ok
+        if illConditioned
+            conditionStatus = 'ill-conditioned';
+        else
+            conditionStatus = 'well-conditioned';
+        end
+        fprintf('[denoise] Using %d of %d dimensions (%d removed); S_bar is %s.\n', ...
+            size(B, 2), initialBasisDimension, removedDimensions, conditionStatus);
+    else
+        fprintf('[denoise] No model computed; 0 of %d dimensions used (%d removed); conditioning unavailable.\n', ...
+            initialBasisDimension, removedDimensions);
     end
 
-    % ------------------------------------------------------------------
-    % Step 3 (S3c): S_bar does not depend on the noise, so build it once
-    % ------------------------------------------------------------------
-    % S_bar = sum_i ( w_xi_i * a_i a_i' + wbar_xi_i * A_i' A_i )
-    S_bar = zeros(p, p);
+    if ~ok
+        Q = NaN(originalDimension, originalDimension);
+        q = NaN(originalDimension, 1);
+        c = NaN;
+        e = NaN(originalDimension + 1, size(X, 2));
+        return;
+    end
 
+    [Qsmall, qsmall, c, esmall] = ...
+        compute_quadratic_approximation(F, Gsmall, modelData, method);
+
+    Q = B * Qsmall * B';
+    q = B * qsmall;
+    e = [esmall(1, :); B * esmall(2:end, :)];
+    ok = true;
+end
+
+
+function [B, removedCount] = remove_poorly_spread_directions(X, B, spreadRemovalMethod)
+% Reduce B using the configured spread criterion after full S_bar fails.
+    if ~ismember(spreadRemovalMethod, [0, 1])
+        error('denoise:InvalidRemovingOption', ...
+            'Spread removal method must be 0 (B columns) or 1 (SVD directions).');
+    end
+
+    centeredCoordinates = B' * X;
+    centeredCoordinates = centeredCoordinates - mean(centeredCoordinates, 2);
+    if spreadRemovalMethod == 0
+        directionSpread = sqrt(sum(centeredCoordinates.^2, 2));
+        directionVectors = eye(size(B, 2));
+    else
+        [spreadDirections, singularValues, ~] = ...
+            svd(centeredCoordinates, 'econ');
+        directionSpread = diag(singularValues);
+        directionSpread(end + 1:size(B, 2), 1) = 0;
+        directionVectors = spreadDirections;
+    end
+
+    minimumSpreadRatio = sqrt(1e-12);
+    if isempty(directionSpread)
+        maximumSpread = 0;
+    else
+        maximumSpread = max(directionSpread);
+    end
+    minimumSpread = minimumSpreadRatio * maximumSpread;
+    if maximumSpread == 0
+        retained = false(size(directionSpread));
+    else
+        retained = directionSpread > minimumSpread;
+    end
+
+    removedCount = nnz(~retained);
+    if any(retained)
+        if spreadRemovalMethod == 0
+            B = B(:, retained);
+        else
+            B = B * directionVectors(:, retained(1:size(directionVectors, 2)));
+        end
+    else
+        B = B(:, false(1, size(B, 2)));
+    end
+end
+
+
+function [model, ok, illConditioned] = ...
+    prepare_quadratic_approximation(X, weights)
+% Build, scale, and condition-check S_bar and the data used by the fit.
+    model = struct();
+    ok = false;
+    illConditioned = false;
+    n = size(X, 1);
+    m = size(X, 2);
+    deltaX = X - X(:, end);
+    nVech = n * (n + 1) / 2;
+    p = nVech + n + 1;
+
+    w_xi = ones(1, m) * weights.w_xi;
+    wbar_xi = ones(1, m) * weights.wbar_xi;
+    w = 1 + w_xi;
+    wbar = 1 + wbar_xi;
+
+    duplication = zeros(n * n, nVech);
+    k = 0;
+    for col = 1:n
+        for row = col:n
+            k = k + 1;
+            idxLower = (col - 1) * n + row;
+            idxUpper = (row - 1) * n + col;
+            duplication(idxLower, k) = 1;
+            duplication(idxUpper, k) = 1;
+        end
+    end
+
+    a_all = zeros(p, m);
+    A_all = zeros(n, p, m);
+    for i = 1:m
+        dx = deltaX(:, i);
+        halfOuter = 0.5 * (dx * dx');
+        topPart = duplication' * halfOuter(:);
+        a_all(:, i) = [topPart; dx; 1];
+        A_all(:, :, i) = [kron(dx', eye(n)) * duplication, eye(n), zeros(n, 1)];
+    end
+
+    S_bar = zeros(p, p);
     for i = 1:m
         a_i = a_all(:, i);
         A_i = A_all(:, :, i);
-
-        % Contribution from the function value of point i
-        S_function = w_xi(i) * (a_i * a_i');
-
-        % Contribution from the gradient of point i
-        S_gradient = wbar_xi(i) * (A_i' * A_i);
-
-        S_bar = S_bar + S_function + S_gradient;
+        S_bar = S_bar + w_xi(i) * (a_i * a_i') ...
+            + wbar_xi(i) * (A_i' * A_i);
     end
-
-    % Make sure S_bar is exactly symmetric (removes rounding asymmetry)
     S_bar = 0.5 * (S_bar + S_bar');
-
-    % Diagonal scaling of the unknowns, y = s .* yScaled. With short steps
-    % vech(Q), q and c have very different scales and S_bar is badly scaled.
-    % a_all and A_all are scaled so the rest is unchanged; y is scaled back below.
-    % If the points do not determine the model, return ok = false.
-    ok = false;
-    Q = NaN(n, n);  q = NaN(n, 1);  c = NaN;  e = NaN(1 + n, m);
-    if any(~(diag(S_bar) > 0))
+    diagonal = diag(S_bar);
+    if any(~(diagonal > 0))
         return;
     end
-    s = 1 ./ sqrt(diag(S_bar));
-    a_all = s .* a_all;
-    A_all = A_all .* s';
-    S_bar = S_bar .* (s * s');
+    scale = 1 ./ sqrt(diagonal);
+    a_all = scale .* a_all;
+    A_all = A_all .* scale';
+    S_bar = S_bar .* (scale * scale');
     [R, notPosDef] = chol(S_bar);
-    if notPosDef || rcond(S_bar) < 1e-12
+    if notPosDef
         return;
     end
+
+    reciprocalCondition = rcond(S_bar);
+    illConditioned = reciprocalCondition < 1e-12;
+
+    model = struct('n', n, 'm', m, 'nVech', nVech, 'p', p, ...
+        'w_xi', w_xi, 'wbar_xi', wbar_xi, 'w', w, 'wbar', wbar, ...
+        'a_all', a_all, 'A_all', A_all, 'scale', scale, ...
+        'duplication', duplication, 'R', R);
+    ok = true;
+end
+
+
+function [Q, q, c, e] = compute_quadratic_approximation(F, G, model, method)
+% Fit the quadratic model using prepared data and the checked S_bar factor.
+
+    n = model.n;
+    m = model.m;
+    nVech = model.nVech;
+    p = model.p;
+    w_xi = model.w_xi;
+    wbar_xi = model.wbar_xi;
+    w = model.w;
+    wbar = model.wbar;
+    a_all = model.a_all;
+    A_all = model.A_all;
+    s = model.scale;
+    duplication = model.duplication;
+    R = model.R;
 
     % Factorise once. S_bar is constant, so the factor can be reused in
     % every iteration. Needs S_bar positive definite, which requires
@@ -242,13 +301,11 @@ function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method, wei
     % Returns e_f (1 x m) and e_g (n x m).
 
     if method == 0
-        fprintf('Using fixed point iteration to solve the noise system.\n');
         [e_f, e_g] = fixed_point(F, G, ...
                                  a_all, A_all, ...
                                  w_xi, wbar_xi, w, wbar, ...
                                  R);
     elseif method == 1
-        fprintf('Using direct solve to solve the noise system.\n');
         [e_f, e_g] = solve_noise_system(F, G, ...
                                         a_all, A_all, ...
                                         w_xi, wbar_xi, w, wbar, ...
@@ -288,8 +345,8 @@ function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method, wei
     q     = y(nVech + 1 : nVech + n);
     c     = y(end);
 
-    % vec(Q) = B * vech(Q), then reshape the vector into an n x n matrix
-    vecQ = B * vechQ;
+    % vec(Q) = duplication * vech(Q), then reshape into an n x n matrix.
+    vecQ = duplication * vechQ;
     Q    = reshape(vecQ, n, n);
 
     % Remove tiny asymmetry from rounding (Q is symmetric in theory)
@@ -300,7 +357,6 @@ function [Q, q, c, e, ok] = compute_quadratic_approximation(X, F, G, method, wei
     % ------------------------------------------------------------------
     e = [ e_f ;      % row 1:     e_i
           e_g ];     % rows 2..:  ebar_i
-    ok = true;
 end
 
 

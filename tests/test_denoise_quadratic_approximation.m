@@ -162,14 +162,114 @@ function testCollinearSamples(testCase)
 
     x = X(:, end);
     config.fixed_or_exact = 1;
+    config.denoise_check_spread = true;
+    config.denoise_spread_removal_method = 0;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
-    d = denoise(x, F(end), G(:, end), ...
-        eye(2), {evals}, 2, [], [], [], ...
-        -inf(2,1), config, weights);
+    [diagnostics, d] = evalc(['denoise(x, F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2,1), config, weights)']);
 
-    % Punkterna täcker inte båda dimensionerna
-    verifyEqual(testCase, d, zeros(2,1));
+    % The unsupported direction is removed, while the supported direction
+    % still provides a usable search direction in the original space.
+    verifyTrue(testCase, all(isfinite(d)));
+    verifyGreaterThan(testCase, norm(d), 0);
+    verifyLessThan(testCase, abs(d(2)), 1e-12);
+    verifyTrue(testCase, contains(diagnostics, ...
+        'Using 1 of 2 dimensions (1 removed); S_bar is well-conditioned.'));
+
+    % With filtering disabled, keep the full basis and reject the
+    % underdetermined two-dimensional quadratic model.
+    config.denoise_check_spread = false;
+    [noSpreadDiagnostics, dWithoutSpreadCheck] = evalc( ...
+        ['denoise(x, F(end), G(:, end), eye(2), {evals}, 2, ' ...
+         '[], [], [], -inf(2,1), config, weights)']);
+    verifyEqual(testCase, dWithoutSpreadCheck, zeros(2, 1));
+    verifyTrue(testCase, contains(noSpreadDiagnostics, ...
+        'No model computed; 0 of 2 dimensions used (0 removed); conditioning unavailable.'));
+
+    % The SVD-based removal mode is selectable from the config as well.
+    config.denoise_check_spread = true;
+    config.denoise_spread_removal_method = 1;
+    [svdDiagnostics, dSvd] = evalc(['denoise(x, F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2,1), config, weights)']);
+    verifyTrue(testCase, all(isfinite(dSvd)));
+    verifyGreaterThan(testCase, norm(dSvd), 0);
+    verifyTrue(testCase, contains(svdDiagnostics, ...
+        'Using 1 of 2 dimensions (1 removed); S_bar is well-conditioned.'));
+end
+
+function testPoorSpreadIsKeptWhenOriginalSbarIsWellConditioned(testCase)
+    % The second direction has little spread, but the original S_bar is
+    % well-conditioned, so the spread filter should not remove it.
+    X = [-2 -1 0 1 2;
+         1e-8 * [0 1 -1 1 0]];
+
+    f = @(x) -(x(1)-1)^2 - x(2)^2;
+    g = @(x) [-2*(x(1)-1); -2*x(2)];
+    F = zeros(1, size(X, 2));
+    G = zeros(2, size(X, 2));
+    for i = 1:size(X, 2)
+        F(i) = f(X(:, i));
+        G(:, i) = g(X(:, i));
+    end
+
+    evals.X = X;
+    evals.F = F;
+    evals.G = G;
+    config.fixed_or_exact = 1;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+    [diagnostics, d] = evalc(['denoise(X(:, end), F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2, 1), config, weights)']);
+
+    verifyTrue(testCase, all(isfinite(d)));
+    verifyGreaterThan(testCase, norm(d), 0);
+    verifyTrue(testCase, contains(diagnostics, ...
+        'Using 2 of 2 dimensions (0 removed); S_bar is well-conditioned.'));
+end
+
+function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
+    X = [-2 -1 0 1 2;
+         0.3 * [-2 -1 0 1 2] + 1e-7 * [0 1 -1 1 0]];
+
+    f = @(x) -(x(1)-1)^2 - x(2)^2;
+    g = @(x) [-2*(x(1)-1); -2*x(2)];
+    F = zeros(1, size(X, 2));
+    G = zeros(2, size(X, 2));
+    for i = 1:size(X, 2)
+        F(i) = f(X(:, i));
+        G(:, i) = g(X(:, i));
+    end
+
+    evals.X = X;
+    evals.F = F;
+    evals.G = G;
+    config.fixed_or_exact = 1;
+    config.denoise_check_spread = false;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+    lastwarn('');
+    [diagnostics, d] = evalc(['denoise(X(:, end), F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2, 1), config, weights)']);
+    [~, warningId] = lastwarn;
+
+    verifyEmpty(testCase, warningId);
+    verifyTrue(testCase, contains(diagnostics, ...
+        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned.'));
+    verifyTrue(testCase, all(isfinite(d)));
+    verifyGreaterThan(testCase, norm(d), 0);
+
+    config.denoise_check_spread = true;
+    lastwarn('');
+    [diagnostics, d] = evalc(['denoise(X(:, end), F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2, 1), config, weights)']);
+    [~, warningId] = lastwarn;
+
+    verifyEmpty(testCase, warningId);
+    verifyTrue(testCase, contains(diagnostics, ...
+        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned.'));
+    verifyTrue(testCase, all(isfinite(d)));
+    verifyGreaterThan(testCase, norm(d), 0);
 end
 
 function testMultipleEvaluationHistories(testCase)
