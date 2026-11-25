@@ -11,10 +11,6 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     % Normalize the columns of B to get an orthonormal basis for the span of the past search directions.
     B = B ./ columnNorms;
 
-    fprintf('\nNoisy optimization: last %d search directions \n', noisy_size);
-    %fprintf('denoise: evalhist has %d steps, evaluations per step = [%s], total = %d \n', ...
-    %    numel(evalHist), num2str(cellfun(@(e) size(e.X,2), evalHist)), sum(cellfun(@(e) size(e.X,2), evalHist)))
-
     % Get the X, F andf G values from the evalHist.
     X = [];
     F = [];
@@ -25,9 +21,6 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
         G = [G, evalHist{k}.G];
     end
     % Eval j corresponds to X(:,j), F(j) and G(:,j)
-
-    fprintf('[denoise] size(B)=%s, size(X)=%s, size(F)=%s, size(G)=%s\n', ...
-        mat2str(size(B)), mat2str(size(X)), mat2str(size(F)), mat2str(size(G)));
 
     checkSpread = true;
     if isfield(config, 'denoise_check_spread')
@@ -43,7 +36,6 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
         X, F, G, B, config.fixed_or_exact, weights, ...
         logical(checkSpread), double(spreadRemovalMethod));
     if ~ok
-        fprintf('[denoise] The sample points do not determine the quadratic model; skipping.\n');
         d_prime = zeros(size(x));
         return;
     end
@@ -75,37 +67,78 @@ end
 function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
     X, F, G, B, method, weights, checkSpread, spreadRemovalMethod)
 % Build S_bar for the full basis first. Only inspect sample spread and retry
-% in a smaller subspace when the full-basis system is ill-conditioned.
+% in a smaller subspace when the full-basis system cannot be used reliably.
     originalDimension = size(B, 1);
+    originalB = B;
+    initialBasisDimension = size(B, 2);
+    removedDimensions = 0;
     Z = B' * X;
     Gsmall = B' * G;
-    fprintf('[denoise] approximation inputs: size(Z)=%s, size(F)=%s, size(Gsmall)=%s\n', ...
-        mat2str(size(Z)), mat2str(size(F)), mat2str(size(Gsmall)));
 
-    [modelData, ok, conditionDetail] = prepare_quadratic_approximation(Z, weights);
-    if ~ok && checkSpread
-        fprintf('[denoise] Full-basis S_bar is ill-conditioned: %s.\n', conditionDetail);
+    [modelData, ok, illConditioned] = ...
+        prepare_quadratic_approximation(Z, weights);
+    originalModelData = modelData;
+    originalOk = ok;
+    originalIllConditioned = illConditioned;
+
+    if (~ok || illConditioned) && checkSpread
         [reducedB, removedCount] = ...
             remove_poorly_spread_directions(X, B, spreadRemovalMethod);
         if removedCount > 0
-            B = reducedB;
-            if size(B, 2) == 0
+            removedDimensions = removedCount;
+            if size(reducedB, 2) == 0
                 ok = false;
-                conditionDetail = 'spread check removed all basis directions';
+                if originalOk
+                    B = originalB;
+                    modelData = originalModelData;
+                    ok = true;
+                    illConditioned = originalIllConditioned;
+                    removedDimensions = 0;
+                end
             else
-                Z = B' * X;
-                Gsmall = B' * G;
-                fprintf('[denoise] retrying approximation in size(Z)=%s subspace.\n', ...
-                    mat2str(size(Z)));
-                [modelData, ok, conditionDetail] = ...
-                    prepare_quadratic_approximation(Z, weights);
+                reducedZ = reducedB' * X;
+                reducedGsmall = reducedB' * G;
+                [reducedModelData, reducedOk, reducedIllConditioned] = ...
+                    prepare_quadratic_approximation(reducedZ, weights);
+                if reducedOk
+                    B = reducedB;
+                    Z = reducedZ;
+                    Gsmall = reducedGsmall;
+                    modelData = reducedModelData;
+                    ok = true;
+                    illConditioned = reducedIllConditioned;
+                elseif originalOk
+                    B = originalB;
+                    modelData = originalModelData;
+                    ok = true;
+                    illConditioned = originalIllConditioned;
+                    removedDimensions = 0;
+                else
+                    B = reducedB;
+                    Z = reducedZ;
+                    Gsmall = reducedGsmall;
+                    modelData = reducedModelData;
+                    ok = false;
+                    illConditioned = false;
+                end
             end
         end
     end
 
+    if ok
+        if illConditioned
+            conditionStatus = 'ill-conditioned';
+        else
+            conditionStatus = 'well-conditioned';
+        end
+        fprintf('[denoise] Using %d of %d dimensions (%d removed); S_bar is %s.\n', ...
+            size(B, 2), initialBasisDimension, removedDimensions, conditionStatus);
+    else
+        fprintf('[denoise] No model computed; 0 of %d dimensions used (%d removed); conditioning unavailable.\n', ...
+            initialBasisDimension, removedDimensions);
+    end
+
     if ~ok
-        fprintf('[denoise] The quadratic model is not determined; skipping (%s).\n', ...
-            conditionDetail);
         Q = NaN(originalDimension, originalDimension);
         q = NaN(originalDimension, 1);
         c = NaN;
@@ -115,9 +148,6 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
 
     [Qsmall, qsmall, c, esmall] = ...
         compute_quadratic_approximation(F, Gsmall, modelData, method);
-
-    fprintf('[denoise] approximation outputs: size(Qsmall)=%s, size(qsmall)=%s, size(c)=%s, size(esmall)=%s\n', ...
-        mat2str(size(Qsmall)), mat2str(size(qsmall)), mat2str(size(c)), mat2str(size(esmall)));
 
     Q = B * Qsmall * B';
     q = B * qsmall;
@@ -138,16 +168,12 @@ function [B, removedCount] = remove_poorly_spread_directions(X, B, spreadRemoval
     if spreadRemovalMethod == 0
         directionSpread = sqrt(sum(centeredCoordinates.^2, 2));
         directionVectors = eye(size(B, 2));
-        directionLabel = 'B column';
-        directionGroup = 'B columns';
     else
         [spreadDirections, singularValues, ~] = ...
             svd(centeredCoordinates, 'econ');
         directionSpread = diag(singularValues);
         directionSpread(end + 1:size(B, 2), 1) = 0;
         directionVectors = spreadDirections;
-        directionLabel = 'SVD direction';
-        directionGroup = 'SVD directions';
     end
 
     minimumSpreadRatio = sqrt(1e-12);
@@ -164,18 +190,6 @@ function [B, removedCount] = remove_poorly_spread_directions(X, B, spreadRemoval
     end
 
     removedCount = nnz(~retained);
-    fprintf('\n========== DENOISE: SPREAD-BASED REDUCTION ==========\n');
-    fprintf('Spread cutoff flagged %d of %d %s; cutoff is %.3e ', ...
-        removedCount, size(B, 2), directionGroup, minimumSpread);
-    fprintf('(relative cutoff %.1e of maximum spread %.3e).\n', ...
-        minimumSpreadRatio, maximumSpread);
-    removedDirections = find(~retained);
-    for i = 1:numel(removedDirections)
-        direction = removedDirections(i);
-        fprintf('  Removing %s %d: spread %.3e did not exceed cutoff %.3e.\n', ...
-            directionLabel, direction, directionSpread(direction), minimumSpread);
-    end
-
     if any(retained)
         if spreadRemovalMethod == 0
             B = B(:, retained);
@@ -185,14 +199,15 @@ function [B, removedCount] = remove_poorly_spread_directions(X, B, spreadRemoval
     else
         B = B(:, false(1, size(B, 2)));
     end
-    fprintf('====================================================\n\n');
 end
 
 
-function [model, ok, detail] = prepare_quadratic_approximation(X, weights)
+function [model, ok, illConditioned] = ...
+    prepare_quadratic_approximation(X, weights)
 % Build, scale, and condition-check S_bar and the data used by the fit.
     model = struct();
     ok = false;
+    illConditioned = false;
     n = size(X, 1);
     m = size(X, 2);
     deltaX = X - X(:, end);
@@ -236,7 +251,6 @@ function [model, ok, detail] = prepare_quadratic_approximation(X, weights)
     S_bar = 0.5 * (S_bar + S_bar');
     diagonal = diag(S_bar);
     if any(~(diagonal > 0))
-        detail = 'S_bar has nonpositive diagonal entries';
         return;
     end
     scale = 1 ./ sqrt(diagonal);
@@ -245,21 +259,16 @@ function [model, ok, detail] = prepare_quadratic_approximation(X, weights)
     S_bar = S_bar .* (scale * scale');
     [R, notPosDef] = chol(S_bar);
     if notPosDef
-        detail = 'Cholesky factorization of scaled S_bar failed';
         return;
     end
 
     reciprocalCondition = rcond(S_bar);
-    if reciprocalCondition < 1e-12
-        detail = sprintf('rcond(S_bar) = %.3e is below 1.0e-12', reciprocalCondition);
-        return;
-    end
+    illConditioned = reciprocalCondition < 1e-12;
 
     model = struct('n', n, 'm', m, 'nVech', nVech, 'p', p, ...
         'w_xi', w_xi, 'wbar_xi', wbar_xi, 'w', w, 'wbar', wbar, ...
         'a_all', a_all, 'A_all', A_all, 'scale', scale, ...
         'duplication', duplication, 'R', R);
-    detail = sprintf('rcond(S_bar) = %.3e', reciprocalCondition);
     ok = true;
 end
 
@@ -292,13 +301,11 @@ function [Q, q, c, e] = compute_quadratic_approximation(F, G, model, method)
     % Returns e_f (1 x m) and e_g (n x m).
 
     if method == 0
-        fprintf('Using fixed point iteration to solve the noise system.\n');
         [e_f, e_g] = fixed_point(F, G, ...
                                  a_all, A_all, ...
                                  w_xi, wbar_xi, w, wbar, ...
                                  R);
     elseif method == 1
-        fprintf('Using direct solve to solve the noise system.\n');
         [e_f, e_g] = solve_noise_system(F, G, ...
                                         a_all, A_all, ...
                                         w_xi, wbar_xi, w, wbar, ...
