@@ -11,7 +11,7 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     % Normalize the columns of B to get an orthonormal basis for the span of the past search directions.
     B = B ./ columnNorms;
 
-    % Get the X, F andf G values from the evalHist.
+    % Get the X, F and G values from evalHist.
     X = [];
     F = [];
     G = [];
@@ -20,6 +20,14 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
         F = [F, evalHist{k}.F];
         G = [G, evalHist{k}.G];
     end
+    % Keep the current evaluation last so the model is centered at x.
+    currentMatches = all(X == x, 1) & (F == f) & all(G == g, 1);
+    X(:, currentMatches) = [];
+    F(currentMatches) = [];
+    G(:, currentMatches) = [];
+    X = [X, x];
+    F = [F, f];
+    G = [G, g];
     % Eval j corresponds to X(:,j), F(j) and G(:,j)
 
     checkSpread = true;
@@ -32,9 +40,14 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
         spreadRemovalMethod = config.denoise_spread_removal_method;
     end
 
+    distanceWeightScale = 1;
+    if isfield(config, 'denoise_distance_weight_scale')
+        distanceWeightScale = config.denoise_distance_weight_scale;
+    end
+
     [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
         X, F, G, B, config.fixed_or_exact, weights, ...
-        logical(checkSpread), double(spreadRemovalMethod));
+        logical(checkSpread), double(spreadRemovalMethod), distanceWeightScale);
     if ~ok
         d_prime = zeros(size(x));
         return;
@@ -65,7 +78,8 @@ end
 
 
 function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
-    X, F, G, B, method, weights, checkSpread, spreadRemovalMethod)
+    X, F, G, B, method, weights, checkSpread, spreadRemovalMethod, ...
+    distanceWeightScale)
 % Build S_bar for the full basis first. Only inspect sample spread and retry
 % in a smaller subspace when the full-basis system cannot be used reliably.
     originalDimension = size(B, 1);
@@ -75,11 +89,13 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
     Z = B' * X;
     Gsmall = B' * G;
 
-    [modelData, ok, illConditioned] = ...
-        prepare_quadratic_approximation(Z, weights);
+    [modelData, ok, illConditioned, failureReason, regularization] = ...
+        prepare_quadratic_approximation(Z, weights, distanceWeightScale);
     originalModelData = modelData;
     originalOk = ok;
     originalIllConditioned = illConditioned;
+    originalFailureReason = failureReason;
+    originalRegularization = regularization;
 
     if (~ok || illConditioned) && checkSpread
         [reducedB, removedCount] = ...
@@ -88,18 +104,22 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
             removedDimensions = removedCount;
             if size(reducedB, 2) == 0
                 ok = false;
+                failureReason = 'spread check removed all basis directions';
                 if originalOk
                     B = originalB;
                     modelData = originalModelData;
                     ok = true;
                     illConditioned = originalIllConditioned;
                     removedDimensions = 0;
+                    failureReason = '';
                 end
             else
                 reducedZ = reducedB' * X;
                 reducedGsmall = reducedB' * G;
-                [reducedModelData, reducedOk, reducedIllConditioned] = ...
-                    prepare_quadratic_approximation(reducedZ, weights);
+                [reducedModelData, reducedOk, reducedIllConditioned, ...
+                    reducedFailureReason, reducedRegularization] = ...
+                    prepare_quadratic_approximation( ...
+                        reducedZ, weights, distanceWeightScale);
                 if reducedOk
                     B = reducedB;
                     Z = reducedZ;
@@ -107,12 +127,16 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
                     modelData = reducedModelData;
                     ok = true;
                     illConditioned = reducedIllConditioned;
+                    failureReason = '';
+                    regularization = reducedRegularization;
                 elseif originalOk
                     B = originalB;
                     modelData = originalModelData;
                     ok = true;
                     illConditioned = originalIllConditioned;
                     removedDimensions = 0;
+                    failureReason = '';
+                    regularization = originalRegularization;
                 else
                     B = reducedB;
                     Z = reducedZ;
@@ -120,22 +144,37 @@ function [Q, q, c, e, ok] = get_quadratic_approx_in_subspace( ...
                     modelData = reducedModelData;
                     ok = false;
                     illConditioned = false;
+                    failureReason = reducedFailureReason;
+                    regularization = 0;
                 end
             end
+        elseif ~ok
+            failureReason = sprintf('%s; spread check found no removable directions', ...
+                originalFailureReason);
         end
     end
 
+    removedDimensions = initialBasisDimension - size(B, 2);
+    if regularization > 0
+        regularizationStatus = sprintf('yes (s=%.3e)', regularization);
+    else
+        regularizationStatus = 'no';
+    end
     if ok
         if illConditioned
             conditionStatus = 'ill-conditioned';
         else
             conditionStatus = 'well-conditioned';
         end
-        fprintf('[denoise] Using %d of %d dimensions (%d removed); S_bar is %s.\n', ...
-            size(B, 2), initialBasisDimension, removedDimensions, conditionStatus);
+        fprintf(['[denoise] Using %d of %d dimensions (%d removed); ' ...
+            'S_bar is %s; regularization applied: %s.\n'], ...
+            size(B, 2), initialBasisDimension, removedDimensions, ...
+            conditionStatus, regularizationStatus);
     else
-        fprintf('[denoise] No model computed; 0 of %d dimensions used (%d removed); conditioning unavailable.\n', ...
-            initialBasisDimension, removedDimensions);
+        fprintf(['[denoise] No model computed; 0 of %d dimensions used ' ...
+            '(%d removed); conditioning unavailable. Regularization applied: %s. ' ...
+            'Reason: %s.\n'], initialBasisDimension, removedDimensions, ...
+            regularizationStatus, failureReason);
     end
 
     if ~ok
@@ -202,20 +241,31 @@ function [B, removedCount] = remove_poorly_spread_directions(X, B, spreadRemoval
 end
 
 
-function [model, ok, illConditioned] = ...
-    prepare_quadratic_approximation(X, weights)
+function [model, ok, illConditioned, failureReason, regularization] = ...
+    prepare_quadratic_approximation(X, weights, distanceWeightScale)
 % Build, scale, and condition-check S_bar and the data used by the fit.
     model = struct();
     ok = false;
     illConditioned = false;
+    failureReason = '';
+    regularization = 0;
     n = size(X, 1);
     m = size(X, 2);
     deltaX = X - X(:, end);
     nVech = n * (n + 1) / 2;
     p = nVech + n + 1;
 
-    w_xi = ones(1, m) * weights.w_xi;
-    wbar_xi = ones(1, m) * weights.wbar_xi;
+    distances = sqrt(sum(deltaX.^2, 1));
+    meanDistance = mean(distances);
+    if meanDistance == 0
+        distanceWeights = ones(1, m);
+    else
+        scaledDistances = distances ./ meanDistance ./ distanceWeightScale;
+        distanceWeights = exp(-0.5 * scaledDistances.^2);
+    end
+
+    w_xi = (ones(1, m) * weights.w_xi) .* distanceWeights;
+    wbar_xi = (ones(1, m) * weights.wbar_xi) .* distanceWeights;
     w = 1 + w_xi;
     wbar = 1 + wbar_xi;
 
@@ -249,16 +299,27 @@ function [model, ok, illConditioned] = ...
             + wbar_xi(i) * (A_i' * A_i);
     end
     S_bar = 0.5 * (S_bar + S_bar');
-    diagonal = diag(S_bar);
-    if any(~(diagonal > 0))
+    if any(~isfinite(S_bar(:)))
+        failureReason = 'S_bar contains nonfinite entries';
         return;
     end
-    scale = 1 ./ sqrt(diagonal);
+    diagonal = diag(S_bar);
+    scale = ones(p, 1);
+    positiveDiagonal = diagonal > 0;
+    scale(positiveDiagonal) = 1 ./ sqrt(diagonal(positiveDiagonal));
     a_all = scale .* a_all;
     A_all = A_all .* scale';
     S_bar = S_bar .* (scale * scale');
     [R, notPosDef] = chol(S_bar);
     if notPosDef
+        epsilon = 1e-12; % Minimum eigenvalue floor for the scaled matrix.
+        lambdaMin = min(eig(S_bar));
+        regularization = max(0, epsilon - lambdaMin);
+        S_bar = S_bar + regularization * eye(p);
+        [R, notPosDef] = chol(S_bar);
+    end
+    if notPosDef
+        failureReason = 'Cholesky factorization of scaled S_bar failed';
         return;
     end
 
@@ -543,7 +604,7 @@ function [e_f, e_g] = solve_noise_system(F, G, a_all, A_all, ...
     % Form the Schur-complement system and remove tiny round-off asymmetry.
     M = diag(diagonalW) - B' * SInvB;
     M = 0.5 * (M + M');
-    rhs = -(d + B' * SInvBeta);
+    rhs = d - B' * SInvBeta;
 
     % M is positive definite when the measurement-noise weights are positive.
     % Cholesky gives a stable direct solve without explicitly inverting M.

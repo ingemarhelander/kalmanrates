@@ -75,6 +75,31 @@ function testFixedPointMatchesDirect(testCase)
         'AbsTol', 1e-6);
 end
 
+function testDistanceWeightingFavorsNearbySamples(testCase)
+    % The function's slope is negative near zero and positive farther away.
+    xSamples = [-2 -1 -0.1 -0.05 -0.02 -0.01 ...
+        0.01 0.02 0.05 0.1 1 2 0];
+    f = @(x) x.^3 - x;
+    g = @(x) 3 * x.^2 - 1;
+    evals.X = xSamples;
+    evals.F = f(xSamples);
+    evals.G = g(xSamples);
+
+    config.fixed_or_exact = 1;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+    d = denoise(0, f(0), g(0), 1, {evals}, 1, ...
+        [], [], [], -inf, config, weights);
+
+    % Nearby observations indicate a negative slope; distant ones indicate
+    % a positive slope, so the local weighting should select the former.
+    verifyLessThan(testCase, d, 0);
+
+    config.denoise_distance_weight_scale = 1000;
+    dWeakWeighting = denoise(0, f(0), g(0), 1, {evals}, 1, ...
+        [], [], [], -inf, config, weights);
+    verifyGreaterThan(testCase, dWeakWeighting, 0);
+end
+
 function testInsufficientSamples(testCase)
     % Endast en mätpunkt i två dimensioner
     x = [0.5; 0.3];
@@ -91,11 +116,41 @@ function testInsufficientSamples(testCase)
     config.fixed_or_exact = 1;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
-    d = denoise(x, f, g, B, {evals}, 2, ...
-        [], [], [], xLbd, config, weights);
+    [diagnostics, d] = evalc(['denoise(x, f, g, B, {evals}, 2, ' ...
+        '[], [], [], xLbd, config, weights)']);
 
-    % Ingen unik kvadratisk approximation är möjlig
-    verifyEqual(testCase, d, zeros(2, 1));
+    verifyTrue(testCase, all(isfinite(d)));
+    verifyGreaterThan(testCase, norm(d), 0);
+    verifyTrue(testCase, contains(diagnostics, ...
+        'regularization applied: yes (s='));
+end
+
+function testRegularizesWhenSpreadCheckCannotFixBasis(testCase)
+    X = [0 1;
+         0 1];
+    f = @(x) -(x(1)-1)^2 - x(2)^2;
+    g = @(x) [-2*(x(1)-1); -2*x(2)];
+    F = zeros(1, size(X, 2));
+    G = zeros(2, size(X, 2));
+    for i = 1:size(X, 2)
+        F(i) = f(X(:, i));
+        G(:, i) = g(X(:, i));
+    end
+
+    evals.X = X;
+    evals.F = F;
+    evals.G = G;
+    config.fixed_or_exact = 1;
+    config.denoise_check_spread = true;
+    weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+    [diagnostics, d] = evalc(['denoise(X(:, end), F(end), G(:, end), ' ...
+        'eye(2), {evals}, 2, [], [], [], -inf(2, 1), config, weights)']);
+
+    verifyTrue(testCase, all(isfinite(d)));
+    verifyGreaterThan(testCase, norm(d), 0);
+    verifyTrue(testCase, contains(diagnostics, ...
+        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned; regularization applied: yes (s='));
 end
 
 function testDenoiseRespectsLowerBounds(testCase)
@@ -175,17 +230,17 @@ function testCollinearSamples(testCase)
     verifyGreaterThan(testCase, norm(d), 0);
     verifyLessThan(testCase, abs(d(2)), 1e-12);
     verifyTrue(testCase, contains(diagnostics, ...
-        'Using 1 of 2 dimensions (1 removed); S_bar is well-conditioned.'));
+        'Using 1 of 2 dimensions (1 removed); S_bar is well-conditioned; regularization applied: no.'));
 
-    % With filtering disabled, keep the full basis and reject the
-    % underdetermined two-dimensional quadratic model.
+    % With filtering disabled, the full basis is retained and regularized.
     config.denoise_check_spread = false;
     [noSpreadDiagnostics, dWithoutSpreadCheck] = evalc( ...
         ['denoise(x, F(end), G(:, end), eye(2), {evals}, 2, ' ...
          '[], [], [], -inf(2,1), config, weights)']);
-    verifyEqual(testCase, dWithoutSpreadCheck, zeros(2, 1));
+    verifyTrue(testCase, all(isfinite(dWithoutSpreadCheck)));
+    verifyGreaterThan(testCase, norm(dWithoutSpreadCheck), 0);
     verifyTrue(testCase, contains(noSpreadDiagnostics, ...
-        'No model computed; 0 of 2 dimensions used (0 removed); conditioning unavailable.'));
+        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned; regularization applied: yes (s='));
 
     % The SVD-based removal mode is selectable from the config as well.
     config.denoise_check_spread = true;
@@ -195,7 +250,7 @@ function testCollinearSamples(testCase)
     verifyTrue(testCase, all(isfinite(dSvd)));
     verifyGreaterThan(testCase, norm(dSvd), 0);
     verifyTrue(testCase, contains(svdDiagnostics, ...
-        'Using 1 of 2 dimensions (1 removed); S_bar is well-conditioned.'));
+        'Using 1 of 2 dimensions (1 removed); S_bar is well-conditioned; regularization applied: no.'));
 end
 
 function testPoorSpreadIsKeptWhenOriginalSbarIsWellConditioned(testCase)
@@ -225,7 +280,7 @@ function testPoorSpreadIsKeptWhenOriginalSbarIsWellConditioned(testCase)
     verifyTrue(testCase, all(isfinite(d)));
     verifyGreaterThan(testCase, norm(d), 0);
     verifyTrue(testCase, contains(diagnostics, ...
-        'Using 2 of 2 dimensions (0 removed); S_bar is well-conditioned.'));
+        'Using 2 of 2 dimensions (0 removed); S_bar is well-conditioned; regularization applied: no.'));
 end
 
 function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
@@ -255,7 +310,7 @@ function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
 
     verifyEmpty(testCase, warningId);
     verifyTrue(testCase, contains(diagnostics, ...
-        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned.'));
+        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned; regularization applied: no.'));
     verifyTrue(testCase, all(isfinite(d)));
     verifyGreaterThan(testCase, norm(d), 0);
 
@@ -267,7 +322,7 @@ function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
 
     verifyEmpty(testCase, warningId);
     verifyTrue(testCase, contains(diagnostics, ...
-        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned.'));
+        'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned; regularization applied: no.'));
     verifyTrue(testCase, all(isfinite(d)));
     verifyGreaterThan(testCase, norm(d), 0);
 end
