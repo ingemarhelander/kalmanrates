@@ -1,3 +1,4 @@
+%% 
 % kalmanOptimizeMain.m
 % Gradient ascent for the Kalman objective, with polynomial line search
 % (line_search_main) or backtracking (line_search), chosen in the config.
@@ -15,11 +16,16 @@ weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 maxIter = config.maxIter; % Maximum number of iterations
 mu = config.mu;
 noisy_size = config.noisy_size; % Dimension of noisy subspace
+plotLive = isfield(config, 'plot_live') && config.plot_live ~= 0;
 periods = experimentPeriods(config); % In-sample, optimization and out-of-sample periods
 
 [K, varInd, xLbd, x, data] = setup_problem(periods);
 lineSearchFcn = select_line_search(config); % Line search method and its options
 
+% Multistart settings; missing rows give a single run from the usual start.
+if ~isfield(config, 'numStarts'), config.numStarts = 1; end
+if ~isfield(config, 'seed'), config.seed = 1; end
+if ~isfield(config, 'startPerturbation'), config.startPerturbation = 0.1; end
 numStarts = config.numStarts;
 if ~isscalar(numStarts) || numStarts < 1 || numStarts ~= floor(numStarts)
     error('numStarts must be a positive integer.');
@@ -28,6 +34,7 @@ if ~isscalar(config.startPerturbation) || config.startPerturbation < 0
     error('startPerturbation must be a nonnegative scalar.');
 end
 rng(config.seed, 'twister');
+fprintf('Number of start points: %d\n', numStarts);
 
 % The first run uses the configured start point; subsequent starts are
 % multiplicatively perturbed and projected onto the configured lower bounds.
@@ -43,12 +50,17 @@ for k = 1:numStarts
     fprintf('\nStarting optimization run %d of %d\n', k, numStarts);
     results{k} = run_single_start( ...
         startPoints(:, k), K, mu, varInd, xLbd, ...
-        noisy_size, maxIter, config, lineSearchFcn, weights, periods, k);
+        noisy_size, maxIter, config, lineSearchFcn, weights, periods, k, plotLive);
     fprintf('Run %d final objective: %.8g (%d iterations)\n', ...
         k, results{k}.fFinal, results{k}.iterations);
 end
 
 scores = cellfun(@(r) r.fFinal, results);
+if ~any(isfinite(scores))
+    error('No start point gave a finite objective.');
+end
+fprintf('\nFinal objective per run:\n');
+fprintf('  Run %2d: %.8g\n', [1:numStarts; scores(:)']);
 [bestScore, bestIndex] = max(scores);
 bestResult = results{bestIndex};
 fprintf('\nBest objective: %.8g from run %d\n', bestScore, bestIndex);
@@ -66,11 +78,18 @@ save_result(bestResult.xFinal, varInd, data.K, periods, history);
 %% ------------------------------ Functions -------------------------------
 
 function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
-        maxIter, config, lineSearchFcn, weights, periods, runIndex)
+        maxIter, config, lineSearchFcn, weights, periods, runIndex, plotLive)
 
     x = x0;
     [f, g] = kalmanObj(x, K, mu, varInd);
     history = init_history(x);
+    if ~(isfinite(f) && all(isfinite(g)))
+        % A perturbed start can give an invalid objective; skip that run.
+        fprintf('Run %d: the start point gives a non-finite objective; skipped.\n', runIndex);
+        result = struct('xInit', x0, 'xFinal', x0, 'fFinal', -Inf, 'gFinal', g, ...
+            'history', history, 'evalHist', {{}}, 'iterations', 0, 'degreeLogFile', '');
+        return;
+    end
     D = [];           % All orthogonal search directions
     B = [];           % Last noisy_size search directions (one per column)
     evalHist = {};
@@ -88,6 +107,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
 
         history.stepSizes(end + 1, 1) = alpha;
         evalHist = store_evals(evalHist, evals, noisy_size);
+        if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
         [D, B] = store_direction(D, d, noisy_size);
 
         xStart = x;
@@ -103,6 +123,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
             else
                 [alpha, xNew, fNew, gNew, evals] = ...
                     lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+                if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
                 degreeLog = store_degree_log(degreeLog, evals, iter, true);
                 print_iteration(iter, alpha, f, fNew, g, gNew, evals);
                 [x, f, g] = update_step(xNew, fNew, gNew);

@@ -61,7 +61,10 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             K = objective(1e-3, 1e-3);
             [f0, g0] = K([0; 0]);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
-            testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.02);
+            % 0.05: de förvalda punkterna ligger jämnt i [0, alpha1], så
+            % sökningen kan stoppa när polynomets max hamnar nära en av dem
+            % i stället för precis vid toppen 0.294.
+            testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.05);
             % Stopp på liten lutning, i bästa punkten eller vid polynomets max
             testCase.verifyTrue(contains(evals.reason, 'ligger nära') || ...
                 contains(evals.reason, 'är liten'), evals.reason);
@@ -74,20 +77,6 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             [f0, g0] = K([0; 0]);
             [~, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K);
             testCase.verifyEqual(numel(unique(evals.A)), numel(evals.A));
-            testCase.verifyGreaterThan(fNew, f0);
-        end
-
-        function steepStartShrinksUntilImprovement(testCase)
-            % Som i riktiga körningen: en varians nära noll ger en barriärterm
-            % med startlutning ~1e15, och alpha = 1 är mycket sämre än
-            % startpunkten. Maximum ligger vid alpha = 1e-3. Sökningen ska
-            % krympa steget med faktor 10 tills F ökar, inte ge upp.
-            K = @(x) deal(0.01*log(x(1) + 1e-17) - 10*x(1) - x(2)^2, ...
-                [0.01/(x(1) + 1e-17) - 10; -2*x(2)]);
-            [f0, g0] = K([0; 0]);
-            [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
-            testCase.verifyEqual(evals.A(2:4), [1 0.1 0.01], 'AbsTol', 1e-15);
-            testCase.verifyGreaterThan(alpha, 0);
             testCase.verifyGreaterThan(fNew, f0);
         end
 
@@ -104,13 +93,28 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function stopsAtAlphaOneWhenAlwaysIncreasing(testCase)
             % f ökar hela vägen: polynomet har inget maximum före 1, så
-            % förslaget blir 1 igen och sökningen stoppar direkt.
+            % förslaget efter de fyra förvalda punkterna blir 1 igen och
+            % sökningen stoppar direkt.
             rng(1);
             K = @(x) deal(x(1) + 1e-3*randn, [1; 0] + 1e-3*randn(2, 1));
             [f0, g0] = K([0; 0]);
             [alpha, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K);
             testCase.verifyEqual(alpha, 1);
-            testCase.verifyEqual(numel(evals.A), 2);
+            testCase.verifyEqual(numel(evals.A), 5);
+        end
+
+        function initialPointsBeforeFirstFit(testCase)
+            % alpha1, 3*alpha1/4, alpha1/2 och alpha1/4 mäts först, i den
+            % ordningen, och inget polynom anpassas förrän alla fyra är
+            % mätta (Q = NaN för de tre första). alpha1 = 100/S0 = 0.05 här.
+            K = @(x) deal(-1e3*(x(1) - 1)^2, [-2e3*(x(1) - 1); 0]);
+            [f0, g0] = K([0; 0]);              % S0 = 2000
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
+                struct('alphaMin', 1e-3));
+            testCase.verifyEqual(evals.A(2:5), 0.05*[1 3/4 1/2 1/4], 'AbsTol', 1e-15);
+            testCase.verifyTrue(all(isnan(evals.Q(1:4))));
+            testCase.verifyFalse(isnan(evals.Q(5)));
+            testCase.verifyEqual(evals.AHat(2:4), 0.05*[3/4 1/2 1/4], 'AbsTol', 1e-15);
         end
 
         function maxEvalsLimitsEvaluations(testCase)
@@ -144,7 +148,7 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function nonFinitePointsAreSkipped(testCase)
             % f är NaN för alpha > 0.5, så första punkten (alpha = 1) är NaN.
-            % Sökningen ska krympa steget, inte krascha, och returnera en ändlig
+            % Sökningen ska hoppa över NaN-punkterna, inte krascha, och returnera en ändlig
             % punkt (Req. 42).
             rng(3);
             Kok = objective(0.05, 0.1);
@@ -160,21 +164,21 @@ classdef testLineSearchMain < matlab.unittest.TestCase
         end
 
         function firstStepFromInitialStepLength(testCase)
-            % Första steget är deltaF/(g'*d) = 10/S0, begränsat till
+            % Första steget är deltaF/(g'*d) = 100/S0, begränsat till
             % [alphaMin, 1].
             K = @(x) deal(-0.01*(x(1) - 30)^2, [-0.02*(x(1) - 30); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 0.6 längs d = [1; 0]
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
                 struct('alphaMin', 0.1));
-            testCase.verifyEqual(evals.A(2), 1);    % 10/0.6 > 1
+            testCase.verifyEqual(evals.A(2), 1);    % 100/0.6 > 1
             K = @(x) deal(-1e3*(x(1) - 1)^2, [-2e3*(x(1) - 1); 0]);
             [f0, g0] = K([0; 0]);              % S0 = 2000
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
                 struct('alphaMin', 1e-3));
-            testCase.verifyEqual(evals.A(2), 0.005, 'AbsTol', 1e-15);  % 10/2000
+            testCase.verifyEqual(evals.A(2), 0.05, 'AbsTol', 1e-15);  % 100/2000
             [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], K, ...
                 struct('alphaMin', 0.1));
-            testCase.verifyEqual(evals.A(2), 0.1);  % 10/2000 < alphaMin
+            testCase.verifyEqual(evals.A(2), 0.1);  % 100/2000 < alphaMin
         end
 
         function nonAscentDirectionEvaluatesNothing(testCase)
@@ -191,14 +195,14 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
         function measuredWorseProposalStops(testCase)
             % F ökar ända fram till gränsen alpha = 1 (log(1 - alpha) = -Inf
-            % där). Efter krympningen till 0.1 föreslår polynomet gränsen
+            % där). Efter de förvalda punkterna föreslår polynomet gränsen
             % igen, en redan mätt ogiltig punkt. Sökningen ska stoppa och
             % returnera den bästa punkten, inte köra gränsen igen.
             Kb = @(x) deal(10*x(1) + 0.01*log(1 - x(1)), [10 - 0.01/(1 - x(1)); 0]);
             [f0, g0] = Kb([0; 0]);
             [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [1; 0], Kb, ...
                 struct('alphaMin', 0.1));
-            testCase.verifyTrue(contains(evals.reason, 'inte bäst'), evals.reason);
+            testCase.verifyTrue(contains(evals.reason, 'redan utvärderad'), evals.reason);
             testCase.verifyGreaterThan(fNew, f0);
             testCase.verifyEqual(fNew, max(evals.F));
             testCase.verifyLessThan(alpha, 1);
@@ -256,6 +260,87 @@ classdef testLineSearchMain < matlab.unittest.TestCase
 
             % De två funktionernas resultat ska vara konsistenta
             testCase.verifyEqual(xNew, x + alpha*d, ...
+                'AbsTol', 1e-12);
+        end
+
+        function shrinkAlphaMaxCanBeDisabled(testCase)
+            % Kvadratisk funktion med maximum vid alpha = 0.3.
+            K = @(x) deal( ...
+                -(x(1) - 0.3)^2, ...
+                [-2*(x(1) - 0.3); 0]);
+
+            x = [0; 0];
+            d = [1; 0];
+            [f, g] = K(x);
+
+            % Kör med krympning aktiverad
+            [~, ~, fShrink, ~, evalsShrink] = runQuiet( ...
+                x, f, g, d, K, ...
+                struct('shrinkAlphaMax', 1));
+
+            % Kör med krympning avaktiverad
+            [~, ~, fFixed, ~, evalsFixed] = runQuiet( ...
+                x, f, g, d, K, ...
+                struct('shrinkAlphaMax', 0));
+
+            % Med krympning ska intervallet minska.
+            testCase.verifyTrue( ...
+                any([evalsShrink.fitAlphaMax{:}] < 1));
+
+            % Utan krympning ska alphaMax alltid vara 1.
+            testCase.verifyEqual( ...
+                [evalsFixed.fitAlphaMax{:}], ...
+                ones(size([evalsFixed.fitAlphaMax{:}])));
+
+            % Båda metoderna ska hitta en förbättring.
+            testCase.verifyGreaterThan(fShrink, f);
+            testCase.verifyGreaterThan(fFixed, f);
+
+            % Alla utvärderade steglängder ska ligga inom [0, 1].
+            testCase.verifyTrue(all(evalsShrink.A >= 0 & evalsShrink.A <= 1));
+            testCase.verifyTrue(all(evalsFixed.A >= 0 & evalsFixed.A <= 1));
+        end
+
+        function usesPointsOutsideShrunkAlphaMax(testCase)
+            % Kvadratisk funktion med maximum vid alpha = 0.3.
+            K = @(x) deal( ...
+                -(x(1) - 0.3)^2, ...
+                [-2*(x(1) - 0.3); 0]);
+
+            x = [0; 0];
+            d = [1; 0];
+            [f, g] = K(x);
+
+            % Aktivera krympning av alphaMax.
+            [~, ~, ~, ~, evals] = runQuiet( ...
+                x, f, g, d, K, ...
+                struct('shrinkAlphaMax', 1, 'alphaMin', 1));
+
+            % Kontrollera den första polynomanpassningen.
+            alphaMax = evals.fitAlphaMax{1};
+            t = evals.fitAlpha{1};
+
+            % Sökintervallet ska ha krympt.
+            testCase.verifyLessThan(alphaMax, 1);
+
+            % Minst en mätpunkt ska ligga utanför
+            % det nya sökintervallet.
+            testCase.verifyTrue(any(t > 1));
+
+            % Alla fem initiala mätpunkter ska användas
+            % i den första polynomanpassningen.
+            testCase.verifyEqual(numel(t), 5);
+
+            % Kontrollera att även punkterna utanför
+            % alphaMax finns med med rätt koordinater.
+            testCase.verifyEqual( ...
+                t * alphaMax, evals.A(1:5), ...
+                'AbsTol', 1e-12);
+
+            % Kontrollera att funktionsvärdena
+            % från alla fem punkter används.
+            testCase.verifyEqual( ...
+                evals.fitF{1}, evals.F(1:5), ...
                 'AbsTol', 1e-12);
         end
 
