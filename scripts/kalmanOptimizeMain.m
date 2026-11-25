@@ -11,6 +11,18 @@ addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
 config = readConfig(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+if exist('kalmanOptimizeMainConfigOverride', 'var')
+    if ~isstruct(kalmanOptimizeMainConfigOverride) || ...
+            ~isscalar(kalmanOptimizeMainConfigOverride)
+        error('kalmanrates:InvalidConfigOverride', ...
+            'kalmanOptimizeMainConfigOverride must be a scalar struct.');
+    end
+    overrideFields = fieldnames(kalmanOptimizeMainConfigOverride);
+    for overrideIdx = 1:numel(overrideFields)
+        config.(overrideFields{overrideIdx}) = ...
+            kalmanOptimizeMainConfigOverride.(overrideFields{overrideIdx});
+    end
+end
 weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
@@ -150,7 +162,6 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
             fprintf('Denoising done\n');
         end
 
-        iter = iter + 1;
         if isequal(x, xStart)
             stalls = stalls + 1;
             if stalls >= 3
@@ -165,6 +176,8 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
         if fulfills_stop_criterion(g, iter, maxIter)
             break;
         end
+        
+        iter = iter + 1;
     end
 
     history = update_history(history, x, f, g); % final point, so the plot ends at fFinal
