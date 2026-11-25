@@ -1,3 +1,4 @@
+%% 
 % kalmanOptimizeMain.m
 % Gradient ascent for the Kalman objective, with polynomial line search
 % (line_search_main) or backtracking (line_search), chosen in the config.
@@ -20,81 +21,145 @@ periods = experimentPeriods(config); % In-sample, optimization and out-of-sample
 
 [K, varInd, xLbd, x, data] = setup_problem(periods);
 lineSearchFcn = select_line_search(config); % Line search method and its options
-[f, g] = kalmanObj(x, K, mu, varInd);
-history = init_history(x);
-D = [];           % All orthogonal search directions 
-B = [];          % Last noisy_size search directions (one per column)
-evalHist = {};   % History of line search evaluations
-degreeLog = init_degree_log(config, periods); % Gradvalets indata per linjesökning (ls_saveFits)
-iter = 1;
-stalls = 0;      % Consecutive iterations where x did not change
 
-while true
-    history = update_history(history, x, f, g);
+% Multistart settings; missing rows give a single run from the usual start.
+if ~isfield(config, 'numStarts'), config.numStarts = 1; end
+if ~isfield(config, 'seed'), config.seed = 1; end
+if ~isfield(config, 'startPerturbation'), config.startPerturbation = 0.1; end
+numStarts = config.numStarts;
+if ~isscalar(numStarts) || numStarts < 1 || numStarts ~= floor(numStarts)
+    error('numStarts must be a positive integer.');
+end
+if ~isscalar(config.startPerturbation) || config.startPerturbation < 0
+    error('startPerturbation must be a nonnegative scalar.');
+end
+rng(config.seed, 'twister');
+fprintf('Number of start points: %d\n', numStarts);
 
-    %Find search direction d
-    [d, D] = find_search_direction(x, g, xLbd, D);
-
-    %Line search to find length of step and new X
-    [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd);
-    degreeLog = store_degree_log(degreeLog, evals, iter, false);
-
-    %Print and update history
-    history.stepSizes(end+1, 1) = alpha;
-    evalHist = store_evals(evalHist, evals, noisy_size);
-    if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
-
-    %Make sure the last n search direction is stored as a base B and run noisy optimization
-    [D, B] = store_direction(D, d, noisy_size);
-
-    %Iteration done, update counter and x f and g
-    xStart = x;
-    if size(D, 2) < noisy_size
-        print_iteration(iter, alpha, f, fNew, g, gNew, evals);
-        [x, f, g] = update_step(xNew, fNew, gNew);
-    elseif size(D, 2) >= noisy_size
-        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
-        if ~any(d_prime)
-            fprintf('Denoising produced no feasible direction; skipping its line search.\n');
-        else
-            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
-            if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
-            degreeLog = store_degree_log(degreeLog, evals, iter, true);
-            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
-            [x, f, g] = update_step(xNew, fNew, gNew);
-            [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
-        end
-        fprintf('Denoising done \n')
-    end
-    
-    iter = iter + 1;
-
-    % Stop if x has not changed in 3 consecutive iterations
-    if isequal(x, xStart)
-        stalls = stalls + 1;
-        if stalls >= 3
-            fprintf('Stopping: x has not changed in %d consecutive iterations.\n', stalls);
-            break;
-        end
-    else
-        stalls = 0;
-    end
-
-    %Check if current step fulfills stop criterion.
-    if fulfills_stop_criterion(g, iter, maxIter)
-        break;
-    end
+% The first run uses the configured start point; subsequent starts are
+% multiplicatively perturbed and projected onto the configured lower bounds.
+startPoints = repmat(x, 1, numStarts);
+for k = 2:numStarts
+    startPoints(:, k) = x .* exp( ...
+        config.startPerturbation .* randn(size(x)));
+    startPoints(:, k) = max(startPoints(:, k), xLbd);
 end
 history = update_history(history, x, f, g); % Final point
 
-%% Out-of-sample evaluation with the optimized parameters
+results = cell(numStarts, 1);
+for k = 1:numStarts
+    fprintf('\nStarting optimization run %d of %d\n', k, numStarts);
+    results{k} = run_single_start( ...
+        startPoints(:, k), K, mu, varInd, xLbd, ...
+        noisy_size, maxIter, config, lineSearchFcn, weights, periods, k, plotLive);
+    fprintf('Run %d final objective: %.8g (%d iterations)\n', ...
+        k, results{k}.fFinal, results{k}.iterations);
+end
+
+scores = cellfun(@(r) r.fFinal, results);
+if ~any(isfinite(scores))
+    error('No start point gave a finite objective.');
+end
+fprintf('\nFinal objective per run:\n');
+fprintf('  Run %2d: %.8g\n', [1:numStarts; scores(:)']);
+[bestScore, bestIndex] = max(scores);
+bestResult = results{bestIndex};
+fprintf('\nBest objective: %.8g from run %d\n', bestScore, bestIndex);
+
+history = bestResult.history;
 if ~isempty(periods.outOfSampleStart)
-    history.outOfSample = evaluateOutOfSample(data.K, data.times, x, varInd, periods);
+    history.outOfSample = evaluateOutOfSample( ...
+        data.K, data.times, bestResult.xFinal, varInd, periods);
     print_out_of_sample(history.outOfSample);
 end
-save_result(x, varInd, data.K, periods, history);
+history.bestRunIndex = bestIndex;
+history.runObjectives = scores;
+save_result(bestResult.xFinal, varInd, data.K, periods, history);
 
 %% ------------------------------ Functions -------------------------------
+
+function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
+        maxIter, config, lineSearchFcn, weights, periods, runIndex, plotLive)
+
+    x = x0;
+    [f, g] = kalmanObj(x, K, mu, varInd);
+    history = init_history(x);
+    if ~(isfinite(f) && all(isfinite(g)))
+        % A perturbed start can give an invalid objective; skip that run.
+        fprintf('Run %d: the start point gives a non-finite objective; skipped.\n', runIndex);
+        result = struct('xInit', x0, 'xFinal', x0, 'fFinal', -Inf, 'gFinal', g, ...
+            'history', history, 'evalHist', {{}}, 'iterations', 0, 'degreeLogFile', '');
+        return;
+    end
+    D = [];           % All orthogonal search directions
+    B = [];           % Last noisy_size search directions (one per column)
+    evalHist = {};
+    degreeLog = init_degree_log(config, periods, runIndex);
+    iter = 1;
+    stalls = 0;
+
+    while true
+        history = update_history(history, x, f, g);
+
+        [d, D] = find_search_direction(x, g, xLbd, D);
+        [alpha, xNew, fNew, gNew, evals] = ...
+            lineSearchFcn(x, f, g, d, K, mu, varInd);
+        degreeLog = store_degree_log(degreeLog, evals, iter, false);
+
+        history.stepSizes(end + 1, 1) = alpha;
+        evalHist = store_evals(evalHist, evals, noisy_size);
+        if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
+        [D, B] = store_direction(D, d, noisy_size);
+
+        xStart = x;
+        if size(D, 2) < noisy_size
+            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+            [x, f, g] = update_step(xNew, fNew, gNew);
+        else
+            d_prime = denoise(x, f, g, B, evalHist, noisy_size, ...
+                K, mu, varInd, xLbd, config, weights);
+            if ~any(d_prime)
+                fprintf(['Denoising produced no feasible direction; ' ...
+                         'skipping its line search.\n']);
+            else
+                [alpha, xNew, fNew, gNew, evals] = ...
+                    lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+                if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
+                degreeLog = store_degree_log(degreeLog, evals, iter, true);
+                print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+                [x, f, g] = update_step(xNew, fNew, gNew);
+                [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
+                    d_prime, D, B, evalHist, noisy_size, evals);
+            end
+            fprintf('Denoising done\n');
+        end
+
+        iter = iter + 1;
+        if isequal(x, xStart)
+            stalls = stalls + 1;
+            if stalls >= 3
+                fprintf('Stopping: x has not changed in %d consecutive iterations.\n', ...
+                    stalls);
+                break;
+            end
+        else
+            stalls = 0;
+        end
+
+        if fulfills_stop_criterion(g, iter, maxIter)
+            break;
+        end
+    end
+
+    result.xInit = x0;
+    result.xFinal = x;
+    result.fFinal = f;
+    result.gFinal = g;
+    result.history = history;
+    result.evalHist = evalHist;
+    result.iterations = iter - 1;
+    result.degreeLogFile = degreeLog.file;
+end
 
 function stop = fulfills_stop_criterion(g, iter, maxIter)
 % Stop when the gradient is small or the iteration limit is reached.
@@ -161,14 +226,15 @@ function [D, B] = store_direction(D, d, noisy_size)
     end
 end
 
-function degreeLog = init_degree_log(config, periods)
+function degreeLog = init_degree_log(config, periods, runIndex)
 % Tom logg för gradvalet. Med ls_saveFits 1 får den ett filnamn i data/,
 % märkt med starttiden, och sparas efter varje linjesökning.
     degreeLog.file = '';
     degreeLog.modelFile = periods.modelFile;
     degreeLog.searches = struct('iter', {}, 'denoise', {}, 'fits', {});
     if isfield(config, 'ls_saveFits') && config.ls_saveFits
-        degreeLog.file = dataPath(sprintf('degreeLog_%s.mat', datestr(now, 'yyyy-mm-dd_HHMMSS')));
+        degreeLog.file = dataPath(sprintf('degreeLog_%s_run%02d.mat', ...
+            datestr(now, 'yyyy-mm-dd_HHMMSS'), runIndex));
         fprintf('Degree selection log: %s\n', degreeLog.file);
     end
 end
@@ -220,7 +286,7 @@ function Dprime = ReOrthogonalize(dprime, D)
     if ~isfinite(norm(dprime)) || norm(dprime) == 0
         error('dprime must have a finite, nonzero norm.');
     end
-    
+
     %Initialize Dprime to be empty except for dprime as the last column.
     n = size(D, 2);
     Dprime = zeros(size(D), 'like', D);
@@ -385,6 +451,7 @@ function save_result(x, varInd, K, periods, history)
 % whole parameter vectors (as storeParamVec takes them).
 
     result.xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    result.xStart(varInd) = history.xInit;
     result.xOpt = result.xStart;
     result.xOpt(varInd) = x;
     result.varInd = varInd;
