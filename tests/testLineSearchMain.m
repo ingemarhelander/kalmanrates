@@ -127,6 +127,16 @@ classdef testLineSearchMain < matlab.unittest.TestCase
             testCase.verifyTrue(contains(evals.reason, 'maxEvals'), evals.reason);
         end
 
+        function maxLineSearchLimitsSimpleEvaluations(testCase)
+            rng(1);
+            K = objective(0.05, 0.1);
+            [f0, g0] = K([0; 0]);
+            [~, ~, ~, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, ...
+                struct('maxLineSearch', 5), true);
+            testCase.verifyEqual(numel(evals.A), 5);
+            testCase.verifyTrue(contains(evals.reason, 'numel(alphas) = 5'), evals.reason);
+        end
+
         function evalsAreConsistent(testCase)
             % evals har en kolumn per punkt och samma längd på A, Q och AHat.
             rng(2);
@@ -295,14 +305,17 @@ if x(1) > 1
 end
 end
 
-function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, opts)
+function [alpha, xNew, fNew, gNew, evals] = runQuiet(x, f, g, d, K, opts, isSimple)
 % line_search_main utan utskrifter.
 % Om inget annat anges är alphaMin = 1, så första steget blir alpha = 1 och
 % testerna ovan inte beror på initial_step_length.
 if nargin < 6
     opts = struct();
 end
+if nargin < 7
+    isSimple = 0;
+end
 if ~isfield(opts, 'alphaMin'), opts.alphaMin = 1; end
 alpha = [];  xNew = [];  fNew = [];  gNew = [];  evals = [];
-evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts);');
+evalc('[alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, [], [], opts, isSimple);');
 end

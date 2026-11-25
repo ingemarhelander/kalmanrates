@@ -34,7 +34,6 @@ while true
 
     %Find search direction d
     [d, D] = find_search_direction(x, g, xLbd, D);
-    D
 
     %Make sure the last n search direction is stored as a base B and run noisy optimization
     [D, B] = store_direction(D, d, noisy_size);

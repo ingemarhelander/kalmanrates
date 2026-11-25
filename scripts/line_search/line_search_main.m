@@ -64,6 +64,8 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %                     hela sökningen.
 %   verbose   (0)     0: ingen utskrift (kalmanOptimizeMain skriver en rad per
 %                     iteration). 1: tabellen och sammanfattningen nedan.
+%   maxLineSearch (10) högsta antal punkter, inklusive startpunkten, för
+%                     den enklare sökvägen (isSimple = 1).
 
     
 
@@ -71,11 +73,6 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         opts = struct();
     end
     opts = default_opts(opts);
-
-    if isSimple
-        [alpha, xNew, fNew, gNew, evals] = simple_line_search(x, f, g, d, K, mu, varInd);
-        return
-    end
 
     evals.X = x;  evals.F = f;  evals.G = g;
     evals.fit = {};  evals.fitInfo = {};  evals.fitAlpha = {};
@@ -106,6 +103,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 
     for k = 1:nLoop
         % De förvalda punkterna mäts först, sedan bestämmer polynomet
+        if (isSimple==1) && (numel(alphas) >= opts.maxLineSearch) % Observera att alphas innehåller startpunkten, så maxLineSearch = 10 ger 9 utvärderingar
+            evals.reason = sprintf('numel(alphas) = %d', opts.maxLineSearch);
+            stop = true;
+            break
+        end
         if ~isempty(pending)
             alphaNew = pending(1);
             pending(1) = [];
@@ -298,7 +300,7 @@ function opts = default_opts(opts)
 % gammalt namn i config-filen inte ignoreras tyst.
     def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
                  'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
-                 'shrinkAlphaMax', 1, 'verbose', 0);
+                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxLineSearch', 10);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
