@@ -77,7 +77,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 
     evals.X = x;  evals.F = f;  evals.G = g;
     evals.fit = {};  evals.fitInfo = {};  evals.fitAlpha = {};
-    evals.fitF = {};  evals.fitSlope = {};  evals.fitAlphaMax = {};
+    evals.fitF = {};  evals.fitSlope = {};  evals.fitAlphaMax = {};  evals.fitTHat = {};
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';  evals.fits = {};
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = 1;                % övre gräns, krymper när en punkt bortom bästa är dålig
@@ -168,6 +168,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         end
         alphaHat = tHat*alphaMax;
         evals.AHat(end) = alphaHat;
+        evals.fitTHat{end+1} = tHat;     % valt max i t, för plot_iteration
         if opts.saveFits
             evals.fits{end+1} = struct('k', k, 't', t, 'F', evals.F(inFit), 'St', St, ...
                                        'alphaMax', alphaMax, 'q', q, 'tHat', tHat);
