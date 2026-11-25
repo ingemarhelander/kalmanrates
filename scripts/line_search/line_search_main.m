@@ -162,7 +162,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
         end
         evals.Q(end) = q;
         if strcmpi(opts.maxMethod, 'newton')
-            tHat = find_step_length_newton(fit, opts.nGrid, 1);
+            tHat = find_step_length_newton(fit, opts.nGrid, 1, opts.h);
         else
             tHat = find_step_length(fit, opts.h, 1);
         end

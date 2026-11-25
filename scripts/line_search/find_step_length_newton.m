@@ -1,4 +1,4 @@
-function alphaNew = find_step_length_newton(fit, nGrid, alphaMax)
+function alphaNew = find_step_length_newton(fit, nGrid, alphaMax, h)
 % find_step_length_newton - Polynomets första maximum med Newton-Raphson.
 %
 % Alternativ till find_step_length (ls_maxMethod newton). Ingen kalmanObj
@@ -14,12 +14,14 @@ function alphaNew = find_step_length_newton(fit, nGrid, alphaMax)
 %
 % Ändpunkter som i find_step_length:
 %   - p' > 0 i alla punkter: alphaMax.
-%   - p'(0) <= 0 (polynomet faller redan från start): mittpunkten av
-%     första intervallet, alphaMax/(2*nGrid).
+%   - p'(0) <= 0 (polynomet faller redan från start): h/2, samma värde
+%     som find_step_length ger, så att grid och newton bara skiljer sig
+%     i själva Newton-steget.
 %
 % In:   fit       ML-anpassningen (från select_poly_degree)
 %       nGrid     antal punkter där p' räknas för att hitta intervallet
 %       alphaMax  längsta tillåtna steg (1 från line_search_main)
+%       h         samma som ls_h, används bara när p'(0) <= 0
 % Ut:   alphaNew  nästa steglängd att köra kalmanObj i
 
     maxIter = 20;
@@ -38,8 +40,8 @@ function alphaNew = find_step_length_newton(fit, nGrid, alphaMax)
     end
     hi = steps(k);
     if poly_slope(fit, lo) <= 0
-        % Bara möjligt för lo = 0
-        alphaNew = (lo + hi)/2;
+        % Bara möjligt för lo = 0. Samma reservvärde som find_step_length.
+        alphaNew = min(h, alphaMax)/2;
         return
     end
 
