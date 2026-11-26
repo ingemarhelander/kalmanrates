@@ -364,6 +364,64 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                 'AbsTol', 1e-12);
         end
 
+        function denoiseDirectionWorksWithLineSearch(testCase)
+            % Konkav kvadratisk målfunktion med känt maximum.
+            K = @(z) deal( ...
+                -(z(1) - 0.8)^2 - (z(2) - 0.5)^2, ...
+                [-2*(z(1) - 0.8); -2*(z(2) - 0.5)]);
+
+            x = [0; 0];
+            xLbd = -inf(2, 1);
+            [f, g] = K(x);
+
+            % 1. Beräkna vanlig sökriktning.
+            [d, ~] = find_search_direction(x, g, xLbd, []);
+
+            testCase.verifyGreaterThan(g' * d, 0);
+
+            % 2. Skapa syntetisk mäthistorik med punkter
+            % som spänner upp båda dimensionerna.
+            X = [-0.5  0.5  0  0  0.4 -0.4  0.3  0;
+                0    0   -0.5 0.5 -0.3  0.4  0.2  0];
+
+            F = zeros(1, size(X, 2));
+            G = zeros(2, size(X, 2));
+
+            for i = 1:size(X, 2)
+                [F(i), G(:, i)] = K(X(:, i));
+            end
+
+            evals.X = X;
+            evals.F = F;
+            evals.G = G;
+
+            config.fixed_or_exact = 1;
+            weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+            % 3. Beräkna denoisad sökriktning.
+            dPrime = denoise(x, f, g, eye(2), ...
+                {evals}, 2, [], [], [], xLbd, ...
+                config, weights);
+
+            testCase.verifyTrue(all(isfinite(dPrime)));
+            testCase.verifyGreaterThan(norm(dPrime), 0);
+
+            % Den nya riktningen ska vara en uppåtriktning.
+            testCase.verifyGreaterThan(g' * dPrime, 0);
+
+            % 4. Kör linjesökning med denoisad riktning.
+            [alpha, xNew, fNew, gNew] = runQuiet( ...
+                x, f, g, dPrime, K);
+
+            % Linjesökningen ska hitta en förbättring.
+            testCase.verifyGreaterThan(alpha, 0);
+            testCase.verifyGreaterThan(fNew, f);
+            testCase.verifyTrue(all(isfinite(gNew)));
+
+            % Den nya punkten ska motsvara steget.
+            testCase.verifyEqual(xNew, x + alpha*dPrime, ...
+                'AbsTol', 1e-12);
+        end
     end
 end
 
