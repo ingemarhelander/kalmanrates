@@ -16,8 +16,11 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
 %            polynomets valda maximum. Svarta punkter och tangentstreck är
 %            de observerade F-värdena och lutningarna i den senaste
 %            anpassningen.
-%   Rad 4:   gradval: LR-statistik för varje prövat steg q -> q+1 eller q+2 mot
-%            sitt gränsvärde (rött streck), för de senaste 6 anpassningarna.
+%   Rad 4:   gradval för de senaste 6 anpassningarna. Staplarna är poängen
+%            från select_poly_degree för varje prövad grad (lägre är bättre).
+%            Den valda graden är orange. Med metoden 'threshold' (som saknar
+%            poäng) visas i stället vilka grader som klarade alla gränser (1)
+%            eller inte (0).
 %
 % Med backtracking (line_search) finns inga polynom; då ritas bara rad 1.
 % Kräver MATLAB R2020b eller senare (tiledlayout i flikar, xline).
@@ -36,7 +39,7 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
     else
         suffix = [' ' label];
     end
-    maxLR = 6;
+    maxFits = 6;                          % antal anpassningar i rad 4
     maxTabs = 100;                        % högsta antal sparade flikar
     nCol = 6;
 
@@ -47,6 +50,9 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
     end
     if ~isfield(evals, 'reason')
         evals.reason = '';
+    end
+    if ~isfield(evals, 'extensionReason') %#ok<NASGU>
+        % inget att göra, fältet används inte här
     end
 
     iter = numel(history.fvals);
@@ -119,7 +125,7 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
         else
             colormap(axF, cmap(1:nFit, :));
             cb = colorbar(axF);
-            clim(axF, [1 nFit]);
+            caxis(axF, [1 nFit]);             % caxis fungerar i alla versioner
             cb.Label.String = 'anpassning';
         end
 
@@ -143,35 +149,57 @@ function plot_iteration(history, evals, fNew, gNew, h, label)
         xlabel('\alpha'); ylabel('dF/d\alpha');
 
         % ---- Rad 4: gradval för de senaste anpassningarna ----
-        idx = max(1, nFit - maxLR + 1):nFit;
+        idx = max(1, nFit - maxFits + 1):nFit;
         for c = 1:numel(idx)
-            k    = idx(c);
-            fit  = evals.fit{k};
-            info = evals.fitInfo{k};
-            m    = numel(evals.fitAlpha{k});
-            nexttile(tl, 3*nCol + c); hold on; grid on
-            if isempty(info.LR)
-                text(0.5, 0.5, sprintf('grad %d: för få punkter (m = %d)', ...
-                     numel(fit.y) - 1, m), 'HorizontalAlignment', 'center');
-                axis([0 1 0 1]);
-            else
-                % Varje test har egen gräns: crit för q -> q+1, crit2 för q -> q+2
-                steps = 1:numel(info.LR);
-                bar(steps, info.LR);
-                plot(steps, info.critTest, 'r_', 'MarkerSize', 20, 'LineWidth', 2);
-                xticks(steps);
-                xticklabels(arrayfun(@(s) sprintf('%d->%d', info.qFrom(s), info.qTo(s)), ...
-                                     steps, 'UniformOutput', false));
-            end
-            title(sprintf('anp. %d: \\sigma_F=%.2g, \\sigma_G=%.2g', ...
-                          k, fit.sigmaF, fit.sigmaG), 'FontSize', 8);
-            if c == 1, ylabel('LR'); end
+            k = idx(c);
+            nexttile(tl, 3*nCol + c);
+            plot_degree_choice(evals.fit{k}, evals.fitInfo{k}, k, numel(evals.fitAlpha{k}));
+            if c == 1, ylabel('poäng'); end
         end
     end
 
     tabs.SelectedTab = tab;                   % visa den nya fliken
     drawnow;
     wait_if_paused(fig);
+end
+
+function plot_degree_choice(fit, info, k, m)
+% Rita gradvalet för en anpassning: poäng per grad, vald grad markerad.
+    hold on; grid on
+    qSel = numel(fit.y) - 1;                  % vald grad
+    ttl = sprintf('anp. %d: \\sigma_F=%.2g, \\sigma_G=%.2g', k, fit.sigmaF, fit.sigmaG);
+
+    if ~isstruct(info) || ~isfield(info, 'degree')
+        text(0.5, 0.5, sprintf('grad %d (m = %d): ingen gradinfo', qSel, m), ...
+             'HorizontalAlignment', 'center');
+        axis([0 1 0 1]);
+        title(ttl, 'FontSize', 8);
+        return
+    end
+
+    degrees = info.degree(:);
+    if isfield(info, 'scores') && any(isfinite(info.scores))
+        vals = info.scores(:);                % score-metoden: lägre är bättre
+        yl = 'poäng';
+    else
+        vals = double(info.accepted(:));      % threshold-metoden: 1 = godkänd
+        yl = 'godkänd';
+    end
+    vals(~isfinite(vals)) = 0;                % ogiltiga anpassningar ritas som 0
+
+    b = bar(degrees, vals);
+    b.FaceColor = 'flat';
+    b.CData = repmat([0.6 0.6 0.6], numel(degrees), 1);
+    sel = find(degrees == qSel, 1);
+    if ~isempty(sel)
+        b.CData(sel, :) = [0.85 0.33 0.10];   % vald grad
+    end
+    xticks(degrees);
+    xlabel(sprintf('grad (m = %d)', m), 'FontSize', 8);
+    if ~strcmp(yl, 'poäng')
+        ylim([0 1.2]);
+    end
+    title(ttl, 'FontSize', 8);
 end
 
 function [fig, tabs] = get_figure()

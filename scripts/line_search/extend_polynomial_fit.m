@@ -84,14 +84,19 @@ function [extendedFit, extendedEvals] = extend_polynomial_fit( ...
         fprintf('  Extension: alpha = %.6f, dF/dalpha = %+.6e\n', ...
                 alphaCurrent, derivative);
 
-        if abs(derivative) >= opts.derivativeThreshold
+        if derivative <= -opts.derivativeThreshold
             stopReason = sprintf( ...
-                '|dF/dalpha| nådde %.3e.', opts.derivativeThreshold);
+                'dF/dalpha nådde -%.3e.', opts.derivativeThreshold);
             break
         end
 
-        deltaAlpha = opts.stepScale / ...
-            max(abs(derivative), opts.slopeFloor);
+        if derivative < -opts.negSlope
+            % Kraftigt negativ derivata: korta steget
+            deltaAlpha = opts.stepScale / abs(derivative);
+        else
+            % Annars alltid fullt steg
+            deltaAlpha = opts.maxStep;
+        end
         deltaAlpha = min(max(deltaAlpha, opts.minStep), opts.maxStep);
 
         alphaTarget = min(alphaCurrent + deltaAlpha, opts.alphaLimit);
@@ -212,7 +217,15 @@ function [fit, evals] = refit_polynomial(evals, alphaMax, d)
     F = evals.F(:);
     S = alphaMax * (evals.G' * d);
 
-    [q, fit, info] = select_poly_degree(t, F, S);
+    fits = mult_q_poly_fits(t, F, S);
+    [q, fit, info] = select_poly_degree(fits, 'score');
+
+    if isempty(q)
+        % Reservväg: använd föregående fit om inget val gick att göra
+        fit = evals.fit{end};
+        q = evals.Q(find(~isnan(evals.Q), 1, 'last'));
+        if isempty(q), q = NaN; end
+    end
 
     evals.fit{end+1} = fit;
     evals.fitInfo{end+1} = info;
@@ -231,6 +244,7 @@ function opts = default_extension_opts(opts)
         'startAlpha', 0.95, ...
         'alphaLimit', 1.3, ...
         'derivativeThreshold', 1e6, ...
+        'negSlope', 0.4, ...
         'stepScale', 0.02, ...
         'slopeFloor', 1e-8, ...
         'minStep', 1e-6, ...
