@@ -135,7 +135,7 @@ fprintf('\nTotal kalmanOptimizeMain runtime: %02d:%02d:%05.2f\n', ...
 
 function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
         maxIter, config, lineSearchFcn, weights, periods, runIndex, plotLive)
-
+    
     %Timer för varje startpunkt
     runTimer = tic;
 
@@ -166,7 +166,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
         if strcmpi(config.searchDirection, 'SD')
             d = find_sd_direction(x, g, xLbd, strcmpi(config.lineSearch, 'polynomial'));
             [alpha, xNew, fNew, gNew, evals] = ...
-                lineSearchFcn(x, f, g, d, K, mu, varInd);
+                lineSearchFcn(x, f, g, d, K, mu, varInd, 0);
             degreeLog = store_degree_log(degreeLog, evals, iter, false);
             history.stepSizes(end + 1, 1) = alpha;
             if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'SD'); end
@@ -176,14 +176,21 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
         % Normal case: CG and denoising
         else
             [d, D] = find_search_direction(x, g, xLbd, D);
-            [alpha, xNew, fNew, gNew, evals] = ...
-                lineSearchFcn(x, f, g, d, K, mu, varInd);
+
+            %Make sure the last n search direction is stored as a base B and run noisy optimization
+            [D, B] = store_direction(D, d, noisy_size);
+            if size(D, 2) < noisy_size
+                [alpha, xNew, fNew, gNew, evals] = ...
+                lineSearchFcn(x, f, g, d, K, mu, varInd, 0);
+            else
+                [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 1); 
+            end
             degreeLog = store_degree_log(degreeLog, evals, iter, false);
 
-            history.stepSizes(end + 1, 1) = alpha;
+            %Print and update history
+            history.stepSizes(end+1, 1) = alpha;
             evalHist = store_evals(evalHist, evals, noisy_size);
             if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
-            [D, B] = store_direction(D, d, noisy_size);
 
             if size(D, 2) < noisy_size
                 print_iteration(iter, alpha, f, fNew, g, gNew, evals);
@@ -196,7 +203,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
                              'skipping its line search.\n']);
                 else
                     [alpha, xNew, fNew, gNew, evals] = ...
-                        lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+                        lineSearchFcn(x, f, g, d_prime, K, mu, varInd, 0);
                     if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
                     degreeLog = store_degree_log(degreeLog, evals, iter, true);
                     print_iteration(iter, alpha, f, fNew, g, gNew, evals);
@@ -282,13 +289,14 @@ function lineSearchFcn = select_line_search(config)
 
     switch lower(method)
         case 'polynomial'
-            lineSearchFcn = @(x, f, g, d, K, mu, varInd) ...
-                line_search_main(x, f, g, d, K, mu, varInd, lsOpts);
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd, isSimple) ...
+                line_search_main(x, f, g, d, K, mu, varInd, lsOpts, isSimple);
         case 'backtracking'
             if ~isempty(fieldnames(lsOpts))
                 warning('ls_ options are ignored by the backtracking line search.');
             end
-            lineSearchFcn = @line_search;
+            lineSearchFcn = @(x, f, g, d, K, mu, varInd, isSimple) ...
+                line_search(x, f, g, d, K, mu, varInd);
         otherwise
             error('Unknown lineSearch in config: %s (use polynomial or backtracking)', method);
     end
@@ -304,7 +312,11 @@ end
 
 function [D, B] = store_direction(D, d, noisy_size)
 % Keeps only the noisy_size most recent search directions (one per column).
-    D = [D, d]; % adds last search direction to matrix with all previous search directions
+    if isempty(D)
+        D = d;
+    else
+        D = [D, d];
+    end
     if size(D, 2) >= noisy_size
         B = D(:, end-noisy_size+1:end);
     else

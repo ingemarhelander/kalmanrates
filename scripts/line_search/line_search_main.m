@@ -1,4 +1,4 @@
-function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, opts)
+function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, varInd, opts, isSimple)
 % line_search_main - Linjesökning med ML-polynom längs d.
 %
 % Samma in- och utdata som line_search.m (plus opts), så att
@@ -69,6 +69,10 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %                     hela sökningen.
 %   verbose   (0)     0: ingen utskrift (kalmanOptimizeMain skriver en rad per
 %                     iteration). 1: tabellen och sammanfattningen nedan.
+%   maxLineSearch (5) högsta antal punkter, inklusive startpunkten, för
+%                     den enklare sökvägen (isSimple = 1).
+
+    
 
     if nargin < 8 || isempty(opts)
         opts = struct();
@@ -104,6 +108,11 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 
     for k = 1:nLoop
         % De förvalda punkterna mäts först, sedan bestämmer polynomet
+        if (isSimple==1) && (numel(alphas) >= opts.maxLineSearch) % Observera att alphas innehåller startpunkten, så maxLineSearch = 10 ger 9 utvärderingar
+            evals.reason = sprintf('numel(alphas) = %d', opts.maxLineSearch);
+            stop = true;
+            break
+        end
         if ~isempty(pending)
             alphaNew = pending(1);
             pending(1) = [];
@@ -302,7 +311,8 @@ function opts = default_opts(opts)
     % Samma värden som ls_-raderna i kalmanOptimizeMain.config
     def = struct('h', 1e-3, 'dMin', 5e-8, 'c', 0.05, 'maxEvals', 25, ...
                  'alphaMin', 1e-10, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
-                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxMethod', 'grid', 'nGrid', 50);
+                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxMethod', 'grid', 'nGrid', 50, ...
+                 'maxLineSearch', 5);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
