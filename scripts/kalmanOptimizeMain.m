@@ -42,7 +42,7 @@ while true
     if size(D, 2) < noisy_size
         [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 0);
     else
-        [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 1);
+        [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 1); 
     end
     degreeLog = store_degree_log(degreeLog, evals, iter, false);
 

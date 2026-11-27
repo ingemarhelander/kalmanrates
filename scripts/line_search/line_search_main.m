@@ -64,7 +64,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %                     hela sökningen.
 %   verbose   (0)     0: ingen utskrift (kalmanOptimizeMain skriver en rad per
 %                     iteration). 1: tabellen och sammanfattningen nedan.
-%   maxLineSearch (10) högsta antal punkter, inklusive startpunkten, för
+%   maxLineSearch (5) högsta antal punkter, inklusive startpunkten, för
 %                     den enklare sökvägen (isSimple = 1).
 
     
