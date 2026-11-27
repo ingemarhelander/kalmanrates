@@ -5,6 +5,8 @@
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
+%Timer för hela körningen
+totalTimer = tic;
 
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
@@ -104,10 +106,22 @@ history.runs = cellfun(@(r) struct('fvals', r.history.fvals, ...
     'normOfgrads', r.history.normOfgrads), results);
 save_result(bestResult.xFinal, varInd, data.K, periods, history);
 
+% Timer för hela körningen
+totalElapsed = toc(totalTimer);
+hours = floor(totalElapsed / 3600);
+minutes = floor(mod(totalElapsed, 3600) / 60);
+seconds = mod(totalElapsed, 60);
+
+fprintf('\nTotal kalmanOptimizeMain runtime: %02d:%02d:%05.2f\n', ...
+    hours, minutes, seconds);
+
 %% ------------------------------ Functions -------------------------------
 
 function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
         maxIter, config, lineSearchFcn, weights, periods, runIndex, plotLive)
+
+    %Timer för varje startpunkt
+    runTimer = tic;
 
     x = x0;
     [f, g] = kalmanObj(x, K, mu, varInd);
@@ -162,6 +176,15 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
             fprintf('Denoising done\n');
         end
 
+        % Timer för varje startpunkt
+        elapsed = toc(runTimer);
+        hours = floor(elapsed / 3600);
+        minutes = floor(mod(elapsed, 3600) / 60);
+        seconds = mod(elapsed, 60);
+
+        fprintf('Run %d, iteration %d: %02d:%02d:%05.2f\n', runIndex, iter, hours, minutes, seconds);
+        %%
+
         if isequal(x, xStart)
             stalls = stalls + 1;
             if stalls >= 3
@@ -188,7 +211,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
     result.gFinal = g;
     result.history = history;
     result.evalHist = evalHist;
-    result.iterations = iter - 1;
+    result.iterations = iter;
     result.degreeLogFile = degreeLog.file;
 end
 
