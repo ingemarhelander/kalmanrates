@@ -70,6 +70,26 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                 contains(evals.reason, 'är liten'), evals.reason);
         end
 
+        function newtonFindsMaximumWithLittleNoise(testCase)
+            % Samma som ovan med ls_maxMethod newton
+            rng(1);
+            K = objective(1e-3, 1e-3);
+            [f0, g0] = K([0; 0]);
+            opts.maxMethod = 'newton';
+            [alpha, ~, fNew, ~, evals] = runQuiet([0; 0], f0, g0, [2; 0.5], K, opts);
+            testCase.verifyGreaterThan(fNew, f0);
+            testCase.verifyLessThanOrEqual(abs(alpha - trueMaximum()), 0.05);
+            testCase.verifyEqual(numel(unique(evals.A)), numel(evals.A));
+        end
+
+        function unknownMaxMethodGivesError(testCase)
+            K = objective(0.05, 0.1);
+            [f0, g0] = K([0; 0]);
+            opts.maxMethod = 'fzero';
+            testCase.verifyError(@() line_search_main([0; 0], f0, g0, [2; 0.5], K, [], [], opts), ...
+                ?MException);
+        end
+
         function neverRepeatsAnAlpha(testCase)
             % Deterministisk målfunktion, som riktiga Kalman: samma alpha
             % ger samma värden. Ingen alpha får utvärderas två gånger.
@@ -354,6 +374,64 @@ classdef testLineSearchMain < matlab.unittest.TestCase
                 'AbsTol', 1e-12);
         end
 
+        function denoiseDirectionWorksWithLineSearch(testCase)
+            % Konkav kvadratisk målfunktion med känt maximum.
+            K = @(z) deal( ...
+                -(z(1) - 0.8)^2 - (z(2) - 0.5)^2, ...
+                [-2*(z(1) - 0.8); -2*(z(2) - 0.5)]);
+
+            x = [0; 0];
+            xLbd = -inf(2, 1);
+            [f, g] = K(x);
+
+            % 1. Beräkna vanlig sökriktning.
+            [d, ~] = find_search_direction(x, g, xLbd, []);
+
+            testCase.verifyGreaterThan(g' * d, 0);
+
+            % 2. Skapa syntetisk mäthistorik med punkter
+            % som spänner upp båda dimensionerna.
+            X = [-0.5  0.5  0  0  0.4 -0.4  0.3  0;
+                0    0   -0.5 0.5 -0.3  0.4  0.2  0];
+
+            F = zeros(1, size(X, 2));
+            G = zeros(2, size(X, 2));
+
+            for i = 1:size(X, 2)
+                [F(i), G(:, i)] = K(X(:, i));
+            end
+
+            evals.X = X;
+            evals.F = F;
+            evals.G = G;
+
+            config.fixed_or_exact = 1;
+            weights = struct('w_xi', 1, 'wbar_xi', 1);
+
+            % 3. Beräkna denoisad sökriktning.
+            dPrime = denoise(x, f, g, eye(2), ...
+                {evals}, 2, [], [], [], xLbd, ...
+                config, weights);
+
+            testCase.verifyTrue(all(isfinite(dPrime)));
+            testCase.verifyGreaterThan(norm(dPrime), 0);
+
+            % Den nya riktningen ska vara en uppåtriktning.
+            testCase.verifyGreaterThan(g' * dPrime, 0);
+
+            % 4. Kör linjesökning med denoisad riktning.
+            [alpha, xNew, fNew, gNew] = runQuiet( ...
+                x, f, g, dPrime, K);
+
+            % Linjesökningen ska hitta en förbättring.
+            testCase.verifyGreaterThan(alpha, 0);
+            testCase.verifyGreaterThan(fNew, f);
+            testCase.verifyTrue(all(isfinite(gNew)));
+
+            % Den nya punkten ska motsvara steget.
+            testCase.verifyEqual(xNew, x + alpha*dPrime, ...
+                'AbsTol', 1e-12);
+        end
     end
 end
 

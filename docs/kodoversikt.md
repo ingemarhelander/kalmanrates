@@ -191,6 +191,7 @@ De tre optimeringsskripten laddar det ursprungliga sparade Kalman-objektet via `
 - `testDataLimit.m` – testar dataurval, oförändrade parametrar och PCA med kort historik
 - `testAdCounts.m` – kör räknartesterna i `mex/testAdCountsMex.cpp`, som byggs av `compileMex`
 - `test_denoise_quadratic_approximation.m` – testar denoising med små syntetiska problem
+- `demo_denoise.m` – visar denoising på en brusig kvadratisk funktion med plots och vinkelfel
 
 **mex/**
 

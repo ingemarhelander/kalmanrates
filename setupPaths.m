@@ -5,6 +5,7 @@
 projectRoot = fileparts(mfilename('fullpath'));
 addpath(projectRoot);
 addpath(fullfile(projectRoot, 'scripts'));
+addpath(fullfile(projectRoot, 'AI_Implementations'));
 addpath(fullfile(projectRoot, 'model'));
 addpath(fullfile(projectRoot, 'mex'));
 addpath(fullfile(projectRoot, 'measurement'));

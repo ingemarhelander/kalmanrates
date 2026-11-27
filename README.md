@@ -56,6 +56,39 @@ out-of-sample.
 Saknas in-sample-raderna används `kalmanDebug.mat` som tidigare, med en varning om att
 utvärderingen inte är garanterat out-of-sample.
 
+## Jämför konfigurationsvärden
+
+Kör `kalmanOptimizeSweep` utan att ändra configfilen. En parameter fungerar som tidigare:
+
+```matlab
+comparison = kalmanOptimizeSweep('noisy_size', [1 3 10 100]);
+```
+
+Flera parametrar kan köras som separata svep (en parameter ändras åt gången; övriga ligger kvar
+på configvärdet) eller som ett korssvep med alla kombinationer:
+
+```matlab
+separateResults = kalmanOptimizeSweep(struct('noisy_size', [1 3 10], 'mu', [1e-3 1e-2]), 'separate');
+crossResults = kalmanOptimizeSweep(struct('noisy_size', [1 3 10], 'mu', [1e-3 1e-2]), 'cross');
+```
+
+Funktionen visar en jämförelsetabell med objective, gradientnorm, out-of-sample-log-likelihood
+och in-sample-log-likelihood. Slutligt objective och gradientnorm hämtas från optimeringshistoriken.
+Log-likelihood-värdena hämtas från utvärderingen: in-sample avser optimeringsperioden och båda
+log-likelihood-värdena är utan `mu`-straffet. De visas när en out-of-sample-period är konfigurerad.
+`plots.m` visar konvergenskurvorna för bästa startpunkten per inställning samt jämförelse av
+objective och out-of-sample-log-likelihood per dag.
+Tabellen och konvergenskurvorna sparas i `data/kalmanOptimizeSweep_<parametrar>_<läge>_<timestamp>.mat`.
+Det vanliga `data/kalmanOptimizeResult.mat` innehåller resultatet från sista körningen.
+
+## Denoising-demo
+
+För en reproducerbar illustration av denoising på en brusig, kvadratisk funktion, kör
+`setupPaths` och därefter `demo_denoise` från MATLAB i projektroten. Skriptet skriver ut
+medel- och medianvinkelfel för den brusiga respektive denoiserade gradientriktningen över
+100 försök och visar samplemolnet samt felens fördelning. Det använder syntetiska data och
+kräver inte Kalman-data.
+
 ## Välj antal dagar
 
 I `modelRunConfig.m` styr `config.maxObservations` både modellinitiering och optimering

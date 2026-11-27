@@ -1,15 +1,41 @@
+%% 
 % kalmanOptimizeMain.m
 % Gradient ascent for the Kalman objective, with polynomial line search
 % (line_search_main) or backtracking (line_search), chosen in the config.
 % Local functions at the end of the file (requires MATLAB R2016b or later).
 
 %% ------------------------------ Main ------------------------------------
+%Timer för hela körningen
+totalTimer = tic;
 
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'functions'));
 addpath(fullfile(fileparts(mfilename('fullpath')), 'line_search'));
 
 config = readConfig(fullfile(fileparts(mfilename('fullpath')), 'kalmanOptimizeMain.config'));
+if exist('kalmanOptimizeMainConfigOverride', 'var')
+    if ~isstruct(kalmanOptimizeMainConfigOverride) || ...
+            ~isscalar(kalmanOptimizeMainConfigOverride)
+        error('kalmanrates:InvalidConfigOverride', ...
+            'kalmanOptimizeMainConfigOverride must be a scalar struct.');
+    end
+    overrideFields = fieldnames(kalmanOptimizeMainConfigOverride);
+    for overrideIdx = 1:numel(overrideFields)
+        config.(overrideFields{overrideIdx}) = ...
+            kalmanOptimizeMainConfigOverride.(overrideFields{overrideIdx});
+    end
+end
+if ~isfield(config, 'searchDirection')
+    config.searchDirection = 'default';
+end
+if isstring(config.searchDirection) && isscalar(config.searchDirection)
+    config.searchDirection = char(config.searchDirection);
+end
+if ~ischar(config.searchDirection) || size(config.searchDirection, 1) ~= 1 || ...
+        ~any(strcmpi(config.searchDirection, {'default', 'SD'}))
+    error('kalmanrates:InvalidSearchDirection', ...
+          'searchDirection must be ''default'' or ''SD''.');
+end
 weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
@@ -20,84 +46,213 @@ periods = experimentPeriods(config); % In-sample, optimization and out-of-sample
 
 [K, varInd, xLbd, x, data] = setup_problem(periods);
 lineSearchFcn = select_line_search(config); % Line search method and its options
-[f, g] = kalmanObj(x, K, mu, varInd);
-history = init_history(x);
-D = [];           % All orthogonal search directions 
-B = [];          % Last noisy_size search directions (one per column)
-evalHist = {};   % History of line search evaluations
-degreeLog = init_degree_log(config, periods); % Gradvalets indata per linjesökning (ls_saveFits)
-iter = 1;
-stalls = 0;      % Consecutive iterations where x did not change
 
-while true
-    history = update_history(history, x, f, g);
+% Multistart settings; missing rows give a single run from the usual start.
+if ~isfield(config, 'numStarts'), config.numStarts = 1; end
+if ~isfield(config, 'seed'), config.seed = 1; end
+if ~isfield(config, 'startPerturbation'), config.startPerturbation = 0.1; end
+numStarts = config.numStarts;
+if ~isscalar(numStarts) || numStarts < 1 || numStarts ~= floor(numStarts)
+    error('numStarts must be a positive integer.');
+end
+if ~isscalar(config.startPerturbation) || config.startPerturbation < 0
+    error('startPerturbation must be a nonnegative scalar.');
+end
+rng(config.seed, 'twister');
+fprintf('Number of start points: %d\n', numStarts);
 
-    %Find search direction d
-    [d, D] = find_search_direction(x, g, xLbd, D);
-
-    %Make sure the last n search direction is stored as a base B and run noisy optimization
-    [D, B] = store_direction(D, d, noisy_size);
-
-    %Line search to find length of step and new X
-    if size(D, 2) < noisy_size
-        [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 0);
-    else
-        [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 1); 
+% The first run uses the configured start point; subsequent starts are
+% multiplicatively perturbed and projected onto the configured lower bounds.
+% If a perturbed point gives a non-finite objective, the perturbation is
+% halved (same random direction) until the objective is finite.
+startPoints = repmat(x, 1, numStarts);
+for k = 2:numStarts
+    z = randn(size(x));
+    s = config.startPerturbation;
+    for attempt = 1:20
+        startPoints(:, k) = max(x .* exp(s .* z), xLbd);
+        [fk, gk] = kalmanObj(startPoints(:, k), K, mu, varInd);
+        if (isfinite(fk) && all(isfinite(gk))) || attempt == 20
+            break;  % after 20 halvings the point is ~x; run_single_start skips it if still invalid
+        end
+        s = s / 2;
     end
-    degreeLog = store_degree_log(degreeLog, evals, iter, false);
+    fprintf('Start point %d: perturbation %.3g', k, s);
+    if s < config.startPerturbation
+        fprintf(' (halved %d times to get a finite objective)', attempt - 1);
+    end
+    fprintf('\n');
+end
+
+% Progress per start point is saved after every iteration in
+% data/kalmanOptimizeProgress.mat, so plots can show it before the run is done.
+init_progress(numStarts, K, varInd, periods);
+
+results = cell(numStarts, 1);
+for k = 1:numStarts
+    fprintf('\nStarting optimization run %d of %d\n', k, numStarts);
+    results{k} = run_single_start( ...
+        startPoints(:, k), K, mu, varInd, xLbd, ...
+        noisy_size, maxIter, config, lineSearchFcn, weights, periods, k, plotLive);
+    fprintf('Run %d final objective: %.8g (%d iterations)\n', ...
+        k, results{k}.fFinal, results{k}.iterations);
+end
+
+scores = cellfun(@(r) r.fFinal, results);
+if ~any(isfinite(scores))
+    error('No start point gave a finite objective.');
+end
+fprintf('\nFinal objective per run:\n');
+fprintf('  Run %2d: %.8g\n', [1:numStarts; scores(:)']);
+[bestScore, bestIndex] = max(scores);
+bestResult = results{bestIndex};
+fprintf('\nBest objective: %.8g from run %d\n', bestScore, bestIndex);
+
+history = bestResult.history;
+if ~isempty(periods.outOfSampleStart)
+    history.outOfSample = evaluateOutOfSample( ...
+        data.K, data.times, bestResult.xFinal, varInd, periods);
+    print_out_of_sample(history.outOfSample);
+end
+history.bestRunIndex = bestIndex;
+history.runObjectives = scores;
+% f and ||g|| per iteration for every start, for the convergence plot in plots.m
+history.runs = cellfun(@(r) struct('fvals', r.history.fvals, ...
+    'normOfgrads', r.history.normOfgrads), results);
+save_result(bestResult.xFinal, varInd, data.K, periods, history);
+finish_progress(bestIndex);
+
+% Timer för hela körningen
+totalElapsed = toc(totalTimer);
+hours = floor(totalElapsed / 3600);
+minutes = floor(mod(totalElapsed, 3600) / 60);
+seconds = mod(totalElapsed, 60);
+
+fprintf('\nTotal kalmanOptimizeMain runtime: %02d:%02d:%05.2f\n', ...
+    hours, minutes, seconds);
+
+%% ------------------------------ Functions -------------------------------
+
+function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
+        maxIter, config, lineSearchFcn, weights, periods, runIndex, plotLive)
+
+    %Timer för varje startpunkt
+    runTimer = tic;
+
+    x = x0;
+    [f, g] = kalmanObj(x, K, mu, varInd);
+    history = init_history(x);
+    if ~(isfinite(f) && all(isfinite(g)))
+        % A perturbed start can give an invalid objective; skip that run.
+        fprintf('Run %d: the start point gives a non-finite objective; skipped.\n', runIndex);
+        save_progress(runIndex, history, x, -Inf, true);
+        result = struct('xInit', x0, 'xFinal', x0, 'fFinal', -Inf, 'gFinal', g, ...
+            'history', history, 'evalHist', {{}}, 'iterations', 0, 'degreeLogFile', '');
+        return;
+    end
+    D = [];           % All orthogonal search directions
+    B = [];           % Last noisy_size search directions (one per column)
+    evalHist = {};
+    degreeLog = init_degree_log(config, periods, runIndex);
+    iter = 1;
+    stalls = 0;
+
+    while true
+        history = update_history(history, x, f, g);
+        save_progress(runIndex, history, x, f, false);
+
+        xStart = x;
+        % Steepest descent if requested in the config; otherwise CG and denoising.
+        if strcmpi(config.searchDirection, 'SD')
+            d = find_sd_direction(x, g, xLbd, strcmpi(config.lineSearch, 'polynomial'));
+            [alpha, xNew, fNew, gNew, evals] = ...
+                lineSearchFcn(x, f, g, d, K, mu, varInd);
+            degreeLog = store_degree_log(degreeLog, evals, iter, false);
+            history.stepSizes(end + 1, 1) = alpha;
+            if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'SD'); end
+            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+            [x, f, g] = update_step(xNew, fNew, gNew);
+
+        % Normal case: CG and denoising
+        else
+            [d, D] = find_search_direction(x, g, xLbd, D);
+
+            %Make sure the last n search direction is stored as a base B and run noisy optimization
+            [D, B] = store_direction(D, d, noisy_size);
+            if size(D, 2) < noisy_size
+                [alpha, xNew, fNew, gNew, evals] = ...
+                lineSearchFcn(x, f, g, d, K, mu, varInd, 0);
+            else
+                [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d, K, mu, varInd, 1); 
+            end
+            degreeLog = store_degree_log(degreeLog, evals, iter, false);
 
     %Print and update history
     history.stepSizes(end+1, 1) = alpha;
     evalHist = store_evals(evalHist, evals, noisy_size);
     if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
 
-    %Iteration done, update counter and x f and g
-    xStart = x;
-    if size(D, 2) < noisy_size
-        print_iteration(iter, alpha, f, fNew, g, gNew, evals);
-        [x, f, g] = update_step(xNew, fNew, gNew);
-    elseif size(D, 2) >= noisy_size
-        d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd, config, weights);
-        if ~any(d_prime)
-            fprintf('Denoising produced no feasible direction; skipping its line search.\n');
-        else
-            [alpha, xNew, fNew, gNew, evals] = lineSearchFcn(x, f, g, d_prime, K, mu, varInd, 0);
-            if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
-            degreeLog = store_degree_log(degreeLog, evals, iter, true);
-            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
-            [x, f, g] = update_step(xNew, fNew, gNew);
-            [D, B, evalHist] = ReOrthoginalizeAndReOrganize(d_prime, D, B, evalHist, noisy_size, evals);
+            if size(D, 2) < noisy_size
+                print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+                [x, f, g] = update_step(xNew, fNew, gNew);
+            else
+                d_prime = denoise(x, f, g, B, evalHist, noisy_size, ...
+                    K, mu, varInd, xLbd, config, weights);
+                if ~any(d_prime)
+                    fprintf(['Denoising produced no feasible direction; ' ...
+                             'skipping its line search.\n']);
+                else
+                    [alpha, xNew, fNew, gNew, evals] = ...
+                        lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+                    if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
+                    degreeLog = store_degree_log(degreeLog, evals, iter, true);
+                    print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+                    [x, f, g] = update_step(xNew, fNew, gNew);
+                    [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
+                        d_prime, D, B, evalHist, noisy_size, evals);
+                end
+                fprintf('Denoising done\n');
+            end
         end
-        fprintf('Denoising done \n')
-    end
-    
-    iter = iter + 1;
 
-    % Stop if x has not changed in 3 consecutive iterations
-    if isequal(x, xStart)
-        stalls = stalls + 1;
-        if stalls >= 3
-            fprintf('Stopping: x has not changed in %d consecutive iterations.\n', stalls);
+        if isequal(x, xStart)
+            stalls = stalls + 1;
+            if stalls >= 3
+                fprintf('Stopping: x has not changed in %d consecutive iterations.\n', ...
+                    stalls);
+                break;
+            end
+        else
+            stalls = 0;
+        end
+
+        if fulfills_stop_criterion(g, iter, maxIter)
             break;
         end
-    else
-        stalls = 0;
+        
+        iter = iter + 1;
     end
 
-    %Check if current step fulfills stop criterion.
-    if fulfills_stop_criterion(g, iter, maxIter)
-        break;
-    end
-end
+    history = update_history(history, x, f, g); % final point, so the plot ends at fFinal
+    save_progress(runIndex, history, x, f, true);
 
-%% Out-of-sample evaluation with the optimized parameters
-if ~isempty(periods.outOfSampleStart)
-    history.outOfSample = evaluateOutOfSample(data.K, data.times, x, varInd, periods);
-    print_out_of_sample(history.outOfSample);
-end
-save_result(x, varInd, data.K, periods, history);
+    result.xInit = x0;
+    result.xFinal = x;
+    result.fFinal = f;
+    result.gFinal = g;
+    result.history = history;
+    result.evalHist = evalHist;
+    result.iterations = iter;
+    result.degreeLogFile = degreeLog.file;
 
-%% ------------------------------ Functions -------------------------------
+    % Timer för varje startpunkt
+    elapsed = toc(runTimer);
+    hours = floor(elapsed / 3600);
+    minutes = floor(mod(elapsed, 3600) / 60);
+    seconds = mod(elapsed, 60);
+    fprintf('Run %d total time: %02d:%02d:%05.2f\n', runIndex, hours, minutes, seconds);
+
+end
 
 function stop = fulfills_stop_criterion(g, iter, maxIter)
 % Stop when the gradient is small or the iteration limit is reached.
@@ -168,14 +323,15 @@ function [D, B] = store_direction(D, d, noisy_size)
     end
 end
 
-function degreeLog = init_degree_log(config, periods)
+function degreeLog = init_degree_log(config, periods, runIndex)
 % Tom logg för gradvalet. Med ls_saveFits 1 får den ett filnamn i data/,
 % märkt med starttiden, och sparas efter varje linjesökning.
     degreeLog.file = '';
     degreeLog.modelFile = periods.modelFile;
     degreeLog.searches = struct('iter', {}, 'denoise', {}, 'fits', {});
     if isfield(config, 'ls_saveFits') && config.ls_saveFits
-        degreeLog.file = dataPath(sprintf('degreeLog_%s.mat', datestr(now, 'yyyy-mm-dd_HHMMSS')));
+        degreeLog.file = dataPath(sprintf('degreeLog_%s_run%02d.mat', ...
+            datestr(now, 'yyyy-mm-dd_HHMMSS'), runIndex));
         fprintf('Degree selection log: %s\n', degreeLog.file);
     end
 end
@@ -227,7 +383,7 @@ function Dprime = ReOrthogonalize(dprime, D)
     if ~isfinite(norm(dprime)) || norm(dprime) == 0
         error('dprime must have a finite, nonzero norm.');
     end
-    
+
     %Initialize Dprime to be empty except for dprime as the last column.
     n = size(D, 2);
     Dprime = zeros(size(D), 'like', D);
@@ -392,6 +548,7 @@ function save_result(x, varInd, K, periods, history)
 % whole parameter vectors (as storeParamVec takes them).
 
     result.xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    result.xStart(varInd) = history.xInit;
     result.xOpt = result.xStart;
     result.xOpt(varInd) = x;
     result.varInd = varInd;
@@ -401,6 +558,69 @@ function save_result(x, varInd, K, periods, history)
     result.savedAt = datestr(now, 'yyyy-mm-dd HH:MM');
     save(dataPath('kalmanOptimizeResult.mat'), '-struct', 'result');
     fprintf('Saved the result in %s\n', dataPath('kalmanOptimizeResult.mat'));
+end
+
+function init_progress(numStarts, K, varInd, periods)
+% Starts data/kalmanOptimizeProgress.mat for this run. plots.m reads it
+% while finished is false, so the convergence of every start point can be
+% plotted before the run is done (or after it was stopped with Ctrl+C).
+
+    p.startedAt = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+    p.updatedAt = p.startedAt;
+    p.finished = false;
+    p.bestRunIndex = [];
+    p.numStarts = numStarts;
+    p.modelFile = periods.modelFile;
+    p.periods = periods;
+    p.varInd = varInd;
+    % Whole parameter vector with the start values; x of a run fills varInd
+    p.xBase = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    p.runs = repmat(struct('fvals', [], 'normOfgrads', [], 'x', [], 'f', NaN, ...
+                           'done', false), numStarts, 1);
+    write_progress(p);
+end
+
+function save_progress(runIndex, history, x, f, done)
+% Stores f and ||g|| per iteration and the current point of one start.
+% A failure to write never stops the optimization.
+
+    try
+        p = load(progress_file());
+        p.runs(runIndex).fvals = history.fvals;
+        p.runs(runIndex).normOfgrads = history.normOfgrads;
+        p.runs(runIndex).x = x;
+        p.runs(runIndex).f = f;
+        p.runs(runIndex).done = done;
+        p.updatedAt = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+        write_progress(p);
+    catch err
+        warning('kalmanrates:ProgressNotSaved', 'Progress not saved: %s', err.message);
+    end
+end
+
+function finish_progress(bestIndex)
+    try
+        p = load(progress_file());
+        p.finished = true;
+        p.bestRunIndex = bestIndex;
+        p.updatedAt = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+        write_progress(p);
+    catch err
+        warning('kalmanrates:ProgressNotSaved', 'Progress not saved: %s', err.message);
+    end
+end
+
+function write_progress(p)
+% Writes to a temporary file first, so that plots in another MATLAB never
+% reads a half-written file.
+    file = progress_file();
+    tmp = [file(1:end-4) '_tmp.mat'];
+    save(tmp, '-struct', 'p');
+    movefile(tmp, file, 'f');
+end
+
+function file = progress_file()
+    file = dataPath('kalmanOptimizeProgress.mat');
 end
 
 function [x, f, g] = update_step(xNew, fNew, gNew)

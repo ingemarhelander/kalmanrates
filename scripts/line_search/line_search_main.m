@@ -46,14 +46,19 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %            k (punktnummer), t = alpha/alphaMax, F, St (dF/dt), alphaMax,
 %            q (vald grad), tHat (polynomets max i t)
 %
-% opts (valfri, ls_-raderna i kalmanOptimizeMain.config):
+% opts (valfri, ls_-raderna i kalmanOptimizeMain.config). 
+%   maxMethod ('grid') hur polynomets maximum hittas. grid: find_step_length
+%                     (stega med h, mittpunkten i steget där p' byter tecken).
+%                     newton: find_step_length_newton (p' i nGrid punkter,
+%                     sedan Newton-Raphson på p' = 0).
 %   h         (1e-3)  steg längs polynomet i find_step_length, relativt alphaMax
-%   dMin      (1e-2)  avstånd relativt alphaMax som räknas som samma punkt
+%   nGrid     (50)    antal punkter för newton (används inte av grid)
+%   dMin      (5e-8)  avstånd relativt alphaMax som räknas som samma punkt
 %   c         (0.05)  lutningen räknas som liten när |S| <= c*|S0|
-%   maxEvals  (20)    högsta antal kalmanObj-körningar
+%   maxEvals  (25)    högsta antal kalmanObj-körningar
 %   minEvals  (1)     stoppet på liten lutning gäller först efter så många
 %                     punkter. 1 påverkar ingenting (gäller direkt).
-%   alphaMin  (0.1)   kortaste första steg
+%   alphaMin  (1e-10) kortaste första steg
 %   showDegree (0)    1: skriv gradvalet under varje tabellrad (LR för varje
 %                     prövat steg q -> q+1 eller q -> q+2, sigmaF och sigmaG
 %                     före och efter)
@@ -76,7 +81,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 
     evals.X = x;  evals.F = f;  evals.G = g;
     evals.fit = {};  evals.fitInfo = {};  evals.fitAlpha = {};
-    evals.fitF = {};  evals.fitSlope = {};  evals.fitAlphaMax = {};
+    evals.fitF = {};  evals.fitSlope = {};  evals.fitAlphaMax = {};  evals.fitTHat = {};
     evals.Q = NaN;  evals.AHat = NaN;  evals.reason = '';  evals.fits = {};
     alphas = 0;                  % steglängd för varje kolumn i evals
     alphaMax = 1;                % övre gräns, krymper när en punkt bortom bästa är dålig
@@ -165,9 +170,14 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
             degreeLine = describe_degree(info);
         end
         evals.Q(end) = q;
-        tHat = find_step_length(fit, opts.h, 1);
+        if strcmpi(opts.maxMethod, 'newton')
+            tHat = find_step_length_newton(fit, opts.nGrid, 1, opts.h);
+        else
+            tHat = find_step_length(fit, opts.h, 1);
+        end
         alphaHat = tHat*alphaMax;
         evals.AHat(end) = alphaHat;
+        evals.fitTHat{end+1} = tHat;     % valt max i t, för plot_iteration
         if opts.saveFits
             evals.fits{end+1} = struct('k', k, 't', t, 'F', evals.F(inFit), 'St', St, ...
                                        'alphaMax', alphaMax, 'q', q, 'tHat', tHat);
@@ -298,9 +308,10 @@ end
 function opts = default_opts(opts)
 % Fyller i standardvärden. Okända fält ger fel, så att ett felstavat eller
 % gammalt namn i config-filen inte ignoreras tyst.
-    def = struct('h', 1e-3, 'dMin', 1e-2, 'c', 0.05, 'maxEvals', 20, ...
-                 'alphaMin', 0.1, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
-                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxLineSearch', 10);
+    % Samma värden som ls_-raderna i kalmanOptimizeMain.config
+    def = struct('h', 1e-3, 'dMin', 5e-8, 'c', 0.05, 'maxEvals', 25, ...
+                 'alphaMin', 1e-10, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
+                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxMethod', 'grid', 'nGrid', 50);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
@@ -313,5 +324,12 @@ function opts = default_opts(opts)
     end
     if ~(isscalar(opts.h) && isnumeric(opts.h) && opts.h > 0)
         error('ls_h måste vara ett positivt tal.');
+    end
+    if ~any(strcmpi(opts.maxMethod, {'grid', 'newton'}))
+        error('ls_maxMethod måste vara grid eller newton.');
+    end
+    if ~(isscalar(opts.nGrid) && isnumeric(opts.nGrid) && opts.nGrid >= 1 ...
+         && opts.nGrid == round(opts.nGrid))
+        error('ls_nGrid måste vara ett positivt heltal.');
     end
 end

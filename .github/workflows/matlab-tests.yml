@@ -32,6 +32,8 @@ jobs:
               'tests/test_denoise_quadratic_approximation.m'
               'tests/testFindSearchDirection.m'
               'tests/testFindStepLength.m'
+              'tests/testFindStepLengthNewton.m'
+              'tests/testKalmanOptimizeSweep.m'
               'tests/testDataSelection.m'
               'tests/testExperimentPeriods.m'
             };
