@@ -311,7 +311,8 @@ function opts = default_opts(opts)
     % Samma värden som ls_-raderna i kalmanOptimizeMain.config
     def = struct('h', 1e-3, 'dMin', 5e-8, 'c', 0.05, 'maxEvals', 25, ...
                  'alphaMin', 1e-10, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
-                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxMethod', 'grid', 'nGrid', 50);
+                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxMethod', 'grid', 'nGrid', 50, ...
+                 'maxLineSearch', 5);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));

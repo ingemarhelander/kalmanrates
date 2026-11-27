@@ -4,6 +4,7 @@ function [d, D] = find_search_direction(x, g, xLbd, D)
 
     %Initial direction
     d = g;
+    messages = {};
     
     if isempty(D)
         % First iteration: use normed gradient as first serach direction
@@ -23,7 +24,7 @@ function [d, D] = find_search_direction(x, g, xLbd, D)
         orth_error = max(abs(U' * d));
         %fprintf('[find_search_direction] [CHECK] Max orthogonalisation error (U''*d): %.3e\n', orth_error);
         if orth_error > 1e-6
-            fprintf('[find_search_direction] WARNING: Bad orthogonalisation found!\n');
+            messages{end+1} = 'orthogonalization failed';
         end
 
         % Normalising new search direction
@@ -35,12 +36,12 @@ function [d, D] = find_search_direction(x, g, xLbd, D)
             final_norm = norm(d);
             %fprintf('[find_search_direction] [CHECK] Final norm after normalisation: %.6f (should be 1.0)\n', final_norm);
             if abs(final_norm - 1.0) > 1e-6
-                fprintf('[find_search_direction] WARNING: Normalisation failed!\n');
+                messages{end+1} = 'normalization failed';
             end
 
             %fprintf('[find_search_direction] Direction sucessfullly orthonormalised.\n');
         else
-            fprintf('[find_search_direction] WARNING: Gradient aldready in span(D).\n');
+            messages{end+1} = 'gradient already lies in span(D)';
             if norm(g) > 0
                d = g / norm(g);
                D = [];
@@ -52,8 +53,10 @@ function [d, D] = find_search_direction(x, g, xLbd, D)
     
     % Check ascent direction
     ascent_check = g' * d;
-    if ascent_check < 0
-        fprintf('[find_search_direction] WARNING: This is an ascent direction!\n');
+    if ascent_check <= 0
+        messages{end+1} = sprintf( ...
+            'direction is not ascent: g''*d=%+.3e, norm(g)=%.3e, norm(d)=%.3e', ...
+            ascent_check, norm(g), norm(d));
     end
 
     % Largest step length (along d) before each variable hits its lower bound
@@ -66,6 +69,10 @@ function [d, D] = find_search_direction(x, g, xLbd, D)
         d = d * alphaLbdMin * 0.99;   % Ensures that alpha = 1 is feasible
     end
     
+    if ~isempty(messages)
+        fprintf('[find_search_direction] WARNING: %s.\n', strjoin(messages, '; '));
+    end
+
     if any(isnan(d))
         error('Search direction contains NaN');
     end
