@@ -21,7 +21,7 @@ set(groot, 'defaultFigureVisible', 'off');
 runData = struct('fvals', [1; 2; 3], 'normOfgrads', [4; 2; 1]);
 plotData.histories = {struct('runs', runData, 'bestRunIndex', 1)};
 plotData.labels = {'noisy_size = 1'};
-plotData.comparison = table(3, 'VariableNames', {'Objective'});
+plotData.comparison = table(3, 2, 'VariableNames', {'Objective', 'AverageDSize'});
 plotData.outOfSamplePerDay = 0.2;
 kalmanOptimizeSweepPlotData = plotData; %#ok<NASGU>
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'scripts', 'plots.m'));

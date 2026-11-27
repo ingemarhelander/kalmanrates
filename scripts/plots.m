@@ -140,13 +140,20 @@ title(tl, 'Konvergens för bästa startpunkt per konfigurationsvärde', ...
     'Interpreter', 'none');
 
 fig = figure('Name', 'Kalmanoptimering - jämförelse av slutresultat');
-tl = tiledlayout(fig, 2, 1, 'TileSpacing', 'compact');
+tl = tiledlayout(fig, 3, 1, 'TileSpacing', 'compact');
 axObjective = nexttile(tl);
 bar(axObjective, 1:numValues, data.comparison.Objective, 'FaceColor', [0.2 0.45 0.7]);
 set(axObjective, 'XTick', 1:numValues, 'XTickLabel', data.labels);
 xtickangle(axObjective, 30);
 ylabel(axObjective, 'slutligt optimeringsmål');
 grid(axObjective, 'on');
+
+axDSize = nexttile(tl);
+bar(axDSize, 1:numValues, data.comparison.AverageDSize, 'FaceColor', [0.6 0.4 0.7]);
+set(axDSize, 'XTick', 1:numValues, 'XTickLabel', data.labels);
+xtickangle(axDSize, 30);
+ylabel(axDSize, 'genomsnittlig storlek på D');
+grid(axDSize, 'on');
 
 axOos = nexttile(tl);
 oosPerDay = data.outOfSamplePerDay;

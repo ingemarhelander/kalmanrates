@@ -75,6 +75,12 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
     if isfield(config, 'denoise_min_cos_angle')
         minCos = config.denoise_min_cos_angle;
     end
+
+    %if g' * d_prime <= 0 && any(g), d_prime = 0.5 * (d_prime + g / norm(g)); end
+
+
+    %{}
+
     if any(g)
         gHat = g / norm(g);
         if gHat' * d_prime < minCos
@@ -86,6 +92,7 @@ function d_prime = denoise(x, f, g, B, evalHist, noisy_size, K, mu, varInd, xLbd
             end
         end
     end
+    %}
 
     % Make sure tyhe search direction d_prime is feasible with respect to the lower bounds xLbd.
     alphaLbd = ones(size(x)) * inf;

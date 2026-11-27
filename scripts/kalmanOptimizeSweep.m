@@ -57,6 +57,7 @@ gradientNorms = nan(numRuns, 1);
 outOfSampleLogLik = nan(numRuns, 1);
 outOfSamplePerDay = nan(numRuns, 1);
 inSampleLogLik = nan(numRuns, 1);
+averageDSizes = nan(numRuns, 1);
 histories = cell(numRuns, 1);
 labels = cell(numRuns, 1);
 mainScript = fullfile(scriptDir, 'kalmanOptimizeMain.m');
@@ -74,6 +75,7 @@ for i = 1:numRuns
     bestRun = history.runs(history.bestRunIndex);
     objectives(i) = bestRun.fvals(end);
     gradientNorms(i) = bestRun.normOfgrads(end);
+    averageDSizes(i) = bestRun.averageDSize;
     if isfield(history, 'outOfSample')
         outOfSampleLogLik(i) = history.outOfSample.logLik;
         outOfSamplePerDay(i) = history.outOfSample.perDay;
@@ -81,10 +83,11 @@ for i = 1:numRuns
     end
 end
 
-metricNames = {'Objective', 'GradientNorm', 'OutOfSampleLogLik', 'InSampleLogLik'};
+metricNames = {'Objective', 'GradientNorm', 'AverageDSize', ...
+    'OutOfSampleLogLik', 'InSampleLogLik'};
 if isLegacyCall
     comparison = table(values_column(runValues(:, 1)), objectives, gradientNorms, ...
-        outOfSampleLogLik, inSampleLogLik, ...
+        averageDSizes, outOfSampleLogLik, inSampleLogLik, ...
         'VariableNames', [{'ParameterValue'}, metricNames]);
 else
     parameterColumns = cell(1, numParameters);
@@ -92,7 +95,7 @@ else
         parameterColumns{p} = values_column(runValues(:, p));
     end
     comparison = table(parameterColumns{:}, objectives, gradientNorms, ...
-        outOfSampleLogLik, inSampleLogLik, ...
+        averageDSizes, outOfSampleLogLik, inSampleLogLik, ...
         'VariableNames', [parameterNames, metricNames]);
 end
 

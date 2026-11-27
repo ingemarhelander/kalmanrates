@@ -1,6 +1,7 @@
-function [d, D] = find_search_direction(x, g, xLbd, D)
+function [d, D, needsDenoising] = find_search_direction(x, g, xLbd, D)
 % find_search-direction Computes an orthonormalised search direction 
 % using a modified conjugate gradient / Gram-Schmidt approach.
+needsDenoising = false;
 
     %Initial direction
     d = g;
@@ -11,51 +12,26 @@ function [d, D] = find_search_direction(x, g, xLbd, D)
         if norm_d > 0
             d = d / norm_d;
         end
-        fprintf('[find_search_direction] Using normalized gradient as initial search direction.\n');
     else
         % 2. Orthonormalisation
         % Gram-Schmidt
-        fprintf('[find_search_direction]Performing Gram-Schmidt against %d previous direction(s)...\n', size(D, 2));
         U = orth(D);
         d = d - U * (U' * d);
         
-        % Orthogonalisation check
-        orth_error = max(abs(U' * d));
-        fprintf('[find_search_direction] [CHECK] Max orthogonalisation error (U''*d): %.3e\n', orth_error);
-        if orth_error > 1e-6
-            fprintf('[find_search_direction] WARNING: Bad orthogonalisation found!\n');
-        end
-
         % Normalising new search direction
         norm_d = norm(d);
         if norm_d > 1e-10 * norm(g)
             d = d / norm_d;
-           
-            % Normaliseing check
-            final_norm = norm(d);
-            fprintf('[find_search_direction] [CHECK] Final norm after normalisation: %.6f (should be 1.0)\n', final_norm);
-            if abs(final_norm - 1.0) > 1e-6
-                fprintf('[find_search_direction] WARNING: Normalisation failed!\n');
-            end
-
-            fprintf('[find_search_direction] Direction sucessfullly orthonormalised.\n');
         else
-            fprintf('[find_search_direction] WARNING: Gradient aldready in span(D).\n');
             if norm(g) > 0
                d = g / norm(g);
-               D = [];
+               needsDenoising = true;
             end
         end
     end
 
     % --- Bound checks ---
     
-    % Check ascent direction
-    ascent_check = g' * d;
-    if ascent_check < 0
-        fprintf('[find_search_direction] WARNING: This is an ascent direction!\n');
-    end
-
     % Largest step length (along d) before each variable hits its lower bound
     alphaLbd = ones(size(x))*inf;
     hitsBound = (d < 0) & (xLbd ~= -inf);

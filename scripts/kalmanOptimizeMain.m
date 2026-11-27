@@ -114,7 +114,8 @@ history.bestRunIndex = bestIndex;
 history.runObjectives = scores;
 % f and ||g|| per iteration for every start, for the convergence plot in plots.m
 history.runs = cellfun(@(r) struct('fvals', r.history.fvals, ...
-    'normOfgrads', r.history.normOfgrads), results);
+    'normOfgrads', r.history.normOfgrads, ...
+    'averageDSize', r.history.averageDSize), results);
 save_result(bestResult.xFinal, varInd, data.K, periods, history);
 
 % Timer för hela körningen
@@ -163,43 +164,95 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
             degreeLog = store_degree_log(degreeLog, evals, iter, false);
             history.stepSizes(end + 1, 1) = alpha;
             if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'SD'); end
-            print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+            print_iteration(iter, alpha, f, fNew, g, gNew, evals, 'SD');
             [x, f, g] = update_step(xNew, fNew, gNew);
 
         % Normal case: CG and denoising
         else
-            [d, D] = find_search_direction(x, g, xLbd, D);
-            [alpha, xNew, fNew, gNew, evals] = ...
-                lineSearchFcn(x, f, g, d, K, mu, varInd);
-            degreeLog = store_degree_log(degreeLog, evals, iter, false);
+            hadPreviousDirections = ~isempty(D);
+            [d, D, needsDenoising] = find_search_direction(x, g, xLbd, D);
+            if needsDenoising
+                ns = min([noisy_size, size(D, 2), numel(evalHist)]);
+                if ns == 0
+                    error('kalmanOptimizeMain:MissingSubspaceHistory', ...
+                        'Cannot denoise an existing search subspace without evaluation history.');
+                end
+                denoiseBasis = D(:, end-ns+1:end);
+                denoiseEvalHist = evalHist(end-ns+1:end);
+                B = denoiseBasis;
+                fprintf('Gradient lies in the existing span; denoising that subspace.\n');
 
-            history.stepSizes(end + 1, 1) = alpha;
-            evalHist = store_evals(evalHist, evals, noisy_size);
-            if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
-            [D, B] = store_direction(D, d, noisy_size);
-
-            if size(D, 2) < noisy_size
-                print_iteration(iter, alpha, f, fNew, g, gNew, evals);
-                [x, f, g] = update_step(xNew, fNew, gNew);
-            else
-                d_prime = denoise(x, f, g, B, evalHist, noisy_size, ...
+                d_prime = denoise(x, f, g, denoiseBasis, denoiseEvalHist, ns, ...
                     K, mu, varInd, xLbd, config, weights);
                 if ~any(d_prime)
-                    fprintf(['Denoising produced no feasible direction; ' ...
-                             'skipping its line search.\n']);
+                    fprintf('No feasible denoised step; keeping the existing subspace.\n');
                 else
                     [alpha, xNew, fNew, gNew, evals] = ...
                         lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
-                    if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
-                    degreeLog = store_degree_log(degreeLog, evals, iter, true);
-                    print_iteration(iter, alpha, f, fNew, g, gNew, evals);
-                    [x, f, g] = update_step(xNew, fNew, gNew);
-                    [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
-                        d_prime, D, B, evalHist, noisy_size, evals);
+                    if alpha < 1e-7
+                        fprintf(['Tiny denoising step discarded; keeping x and resetting D ' ...
+                                 'to its last 10 directions.\n']);
+                        nKeep = min(10, size(D, 2));
+                        D = D(:, end-nKeep+1:end);
+                        nHistory = min([noisy_size, size(D, 2), numel(evalHist)]);
+                        if nHistory > 0
+                            evalHist = evalHist(end-nHistory+1:end);
+                            B = D(:, end-nHistory+1:end);
+                        else
+                            evalHist = {};
+                            B = [];
+                        end
+                    else
+                        degreeLog = store_degree_log(degreeLog, evals, iter, true);
+                        history.stepSizes(end + 1, 1) = alpha;
+                        if plotLive
+                            plot_iteration(history, evals, fNew, gNew, [], 'denoise');
+                        end
+                        print_iteration(iter, alpha, f, fNew, g, gNew, evals, 'denoise');
+                        [x, f, g] = update_step(xNew, fNew, gNew);
+                        [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
+                            d_prime, D, B, evalHist, noisy_size, evals);
+                        fprintf('Re-orthogonalized the existing search subspace.\n');
+                    end
                 end
-                fprintf('Denoising done\n');
+            else
+                [alpha, xNew, fNew, gNew, evals] = ...
+                    lineSearchFcn(x, f, g, d, K, mu, varInd);
+                degreeLog = store_degree_log(degreeLog, evals, iter, false);
+
+                history.stepSizes(end + 1, 1) = alpha;
+                evalHist = store_evals(evalHist, evals, noisy_size);
+                if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
+                [D, B] = store_direction(D, d, noisy_size);
+                if hadPreviousDirections && any(d)
+                    fprintf('Found a new CG direction outside the existing span.\n');
+                end
+
+                if size(D, 2) < noisy_size
+                    print_iteration(iter, alpha, f, fNew, g, gNew, evals, 'CG (no denoising yet)');
+                    [x, f, g] = update_step(xNew, fNew, gNew);
+                else
+                    d_prime = denoise(x, f, g, B, evalHist, noisy_size, ...
+                        K, mu, varInd, xLbd, config, weights);
+                    if ~any(d_prime)
+                        fprintf(['Denoising produced no feasible direction; ' ...
+                                 'skipping its line search.\n']);
+                    else
+                        [alpha, xNew, fNew, gNew, evals] = ...
+                            lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+                        if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
+                        degreeLog = store_degree_log(degreeLog, evals, iter, true);
+                        print_iteration(iter, alpha, f, fNew, g, gNew, evals, 'denoise');
+                        [x, f, g] = update_step(xNew, fNew, gNew);
+                        [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
+                            d_prime, D, B, evalHist, noisy_size, evals);
+                    end
+                end
             end
         end
+
+        history.DSizes(end + 1, 1) = size(D, 2);
+        fprintf('Size of D: %d\n', size(D, 2));
 
         if isequal(x, xStart)
             stalls = stalls + 1;
@@ -217,9 +270,11 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
         end
         
         iter = iter + 1;
+        fprintf('\n')
     end
 
     history = update_history(history, x, f, g); % final point, so the plot ends at fFinal
+    history.averageDSize = mean(history.DSizes);
 
     result.xInit = x0;
     result.xFinal = x;
@@ -287,20 +342,21 @@ function lineSearchFcn = select_line_search(config)
     fprintf('Line search: %s\n', lower(method));
 end
 
-function print_iteration(iter, alpha, f, fNew, g, gNew, evals)
+function print_iteration(iter, alpha, f, fNew, g, gNew, evals, description)
 % One line per iteration. evals: the line search's evaluations; the number
 % of (valid) kalmanObj runs is printed, start point not counted.
-    fprintf('Iter %3d: alpha = %.3e, fNew-fPrev = %+.3e, fNew = %.6f, |g| = %.3e, LS evals = %d\n', ...
-            iter, alpha, fNew-f, fNew, norm(gNew), numel(evals.F) - 1);
+    fprintf('Iter %3d: %s\n', iter, description);
+    fprintf('  alpha = %.3e, fNew-fPrev = %+.3e, fNew = %.6f, |g| = %.3e, LS evals = %d\n', ...
+            alpha, fNew-f, fNew, norm(gNew), numel(evals.F) - 1);
 end
 
 function [D, B] = store_direction(D, d, noisy_size)
-% Keeps only the noisy_size most recent search directions (one per column).
+% Keeps all search directions in D and the most recent noisy_size in B.
     D = [D, d]; % adds last search direction to matrix with all previous search directions
-    if size(D, 2) >= noisy_size
-        B = D(:, end-noisy_size+1:end);
+    if size(D, 2) <= noisy_size
+        B = D;
     else
-    B = []; 
+        B = D(:, end-noisy_size+1:end);
     end
 end
 
@@ -341,7 +397,8 @@ end
 
 function [D, B, evalHist] = ReOrthoginalizeAndReOrganize(dprime, D, B, evalHist, noisy_size, evals)
     Dprime = ReOrthogonalize(dprime, D);
-    Bprime = Dprime(:, end-noisy_size+1:end);
+    firstBColumn = max(1, size(Dprime, 2) - noisy_size + 1);
+    Bprime = Dprime(:, firstBColumn:end);
     evalHistPrime = ReOrganize(evalHist, evals);
     D = Dprime;
     B = Bprime;
@@ -385,8 +442,11 @@ function Dprime = ReOrthogonalize(dprime, D)
             error('Orthogonalization produced a non-finite residual.');
         end
 
-        %Add in the new normalized direction.
-        Dprime(:, k) = d / norm(d);
+        % Keep the subspace rank stable when dprime already spans this column.
+        residualNorm = norm(d);
+        if residualNorm > 1e-12 * norm(D(:, k))
+            Dprime(:, k) = d / residualNorm;
+        end
     end
 end
 
@@ -557,6 +617,8 @@ function history = init_history(xInit)
     history.stepSizes = [];
     history.xs = [];
     history.grads = [];
+    history.DSizes = [];
+    history.averageDSize = NaN;
 end
 
 

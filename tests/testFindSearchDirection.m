@@ -56,7 +56,7 @@ classdef testFindSearchDirection < matlab.unittest.TestCase
             testCase.verifyGreaterThan(g' * d, 0);
         end
 
-        function gradientInPreviousSpanResetsHistory(testCase)
+        function gradientInPreviousSpanRequestsDenoising(testCase)
             x = zeros(3, 1);
             g = [3; 4; 0];
             xLbd = -inf(3, 1);
@@ -64,14 +64,14 @@ classdef testFindSearchDirection < matlab.unittest.TestCase
             % Gradientens riktning finns redan i D
             D = [0.6; 0.8; 0];
 
-            [d, Dnew] = find_search_direction(x, g, xLbd, D);
+            [d, Dnew, needsDenoising] = find_search_direction(x, g, xLbd, D);
 
             % Algoritmen ska återgå till normaliserad gradient
             testCase.verifyEqual(d, g / norm(g), ...
                 'AbsTol', 1e-12);
 
-            % Historiken ska nollställas
-            testCase.verifyEmpty(Dnew);
+            testCase.verifyEqual(Dnew, D);
+            testCase.verifyTrue(needsDenoising);
 
             % Riktningen ska fortfarande vara en uppåtriktning
             testCase.verifyGreaterThan(g' * d, 0);
