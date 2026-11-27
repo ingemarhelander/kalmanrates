@@ -25,6 +25,17 @@ if exist('kalmanOptimizeMainConfigOverride', 'var')
             kalmanOptimizeMainConfigOverride.(overrideFields{overrideIdx});
     end
 end
+if ~isfield(config, 'searchDirection')
+    config.searchDirection = 'default';
+end
+if isstring(config.searchDirection) && isscalar(config.searchDirection)
+    config.searchDirection = char(config.searchDirection);
+end
+if ~ischar(config.searchDirection) || size(config.searchDirection, 1) ~= 1 || ...
+        ~any(strcmpi(config.searchDirection, {'default', 'SD'}))
+    error('kalmanrates:InvalidSearchDirection', ...
+          'searchDirection must be ''default'' or ''SD''.');
+end
 weights = struct('w_xi', config.w_xi, 'wbar_xi', config.wbar_xi);
 
 maxIter = config.maxIter; % Maximum number of iterations
@@ -143,37 +154,51 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
     while true
         history = update_history(history, x, f, g);
 
-        [d, D] = find_search_direction(x, g, xLbd, D);
-        [alpha, xNew, fNew, gNew, evals] = ...
-            lineSearchFcn(x, f, g, d, K, mu, varInd);
-        degreeLog = store_degree_log(degreeLog, evals, iter, false);
-
-        history.stepSizes(end + 1, 1) = alpha;
-        evalHist = store_evals(evalHist, evals, noisy_size);
-        if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
-        [D, B] = store_direction(D, d, noisy_size);
-
         xStart = x;
-        if size(D, 2) < noisy_size
+        % Steepest descent if requested in the config; otherwise CG and denoising.
+        if strcmpi(config.searchDirection, 'SD')
+            d = find_sd_direction(x, g, xLbd, strcmpi(config.lineSearch, 'polynomial'));
+            [alpha, xNew, fNew, gNew, evals] = ...
+                lineSearchFcn(x, f, g, d, K, mu, varInd);
+            degreeLog = store_degree_log(degreeLog, evals, iter, false);
+            history.stepSizes(end + 1, 1) = alpha;
+            if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'SD'); end
             print_iteration(iter, alpha, f, fNew, g, gNew, evals);
             [x, f, g] = update_step(xNew, fNew, gNew);
+
+        % Normal case: CG and denoising
         else
-            d_prime = denoise(x, f, g, B, evalHist, noisy_size, ...
-                K, mu, varInd, xLbd, config, weights);
-            if ~any(d_prime)
-                fprintf(['Denoising produced no feasible direction; ' ...
-                         'skipping its line search.\n']);
-            else
-                [alpha, xNew, fNew, gNew, evals] = ...
-                    lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
-                if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
-                degreeLog = store_degree_log(degreeLog, evals, iter, true);
+            [d, D] = find_search_direction(x, g, xLbd, D);
+            [alpha, xNew, fNew, gNew, evals] = ...
+                lineSearchFcn(x, f, g, d, K, mu, varInd);
+            degreeLog = store_degree_log(degreeLog, evals, iter, false);
+
+            history.stepSizes(end + 1, 1) = alpha;
+            evalHist = store_evals(evalHist, evals, noisy_size);
+            if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'CG'); end
+            [D, B] = store_direction(D, d, noisy_size);
+
+            if size(D, 2) < noisy_size
                 print_iteration(iter, alpha, f, fNew, g, gNew, evals);
                 [x, f, g] = update_step(xNew, fNew, gNew);
-                [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
-                    d_prime, D, B, evalHist, noisy_size, evals);
+            else
+                d_prime = denoise(x, f, g, B, evalHist, noisy_size, ...
+                    K, mu, varInd, xLbd, config, weights);
+                if ~any(d_prime)
+                    fprintf(['Denoising produced no feasible direction; ' ...
+                             'skipping its line search.\n']);
+                else
+                    [alpha, xNew, fNew, gNew, evals] = ...
+                        lineSearchFcn(x, f, g, d_prime, K, mu, varInd);
+                    if plotLive, plot_iteration(history, evals, fNew, gNew, [], 'denoise'); end
+                    degreeLog = store_degree_log(degreeLog, evals, iter, true);
+                    print_iteration(iter, alpha, f, fNew, g, gNew, evals);
+                    [x, f, g] = update_step(xNew, fNew, gNew);
+                    [D, B, evalHist] = ReOrthoginalizeAndReOrganize( ...
+                        d_prime, D, B, evalHist, noisy_size, evals);
+                end
+                fprintf('Denoising done\n');
             end
-            fprintf('Denoising done\n');
         end
 
         % Timer för varje startpunkt
