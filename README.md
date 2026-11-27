@@ -81,6 +81,14 @@ objective och out-of-sample-log-likelihood per dag.
 Tabellen och konvergenskurvorna sparas i `data/kalmanOptimizeSweep_<parametrar>_<läge>_<timestamp>.mat`.
 Det vanliga `data/kalmanOptimizeResult.mat` innehåller resultatet från sista körningen.
 
+## Denoising-demo
+
+För en reproducerbar illustration av denoising på en brusig, kvadratisk funktion, kör
+`setupPaths` och därefter `demo_denoise` från MATLAB i projektroten. Skriptet skriver ut
+medel- och medianvinkelfel för den brusiga respektive denoiserade gradientriktningen över
+100 försök och visar samplemolnet samt felens fördelning. Det använder syntetiska data och
+kräver inte Kalman-data.
+
 ## Välj antal dagar
 
 I `modelRunConfig.m` styr `config.maxObservations` både modellinitiering och optimering
