@@ -16,18 +16,30 @@ function teardownOnce(testCase)
 end
 
 function testQuadraticFunction(testCase)
+    runBothMethods(testCase, @quadraticFunctionForMethod);
+end
+
+function quadraticFunctionForMethod(testCase, method)
     [f, g] = makeFunction(1);
-    checkDenoising(testCase, f, g, 11);
+    checkDenoising(testCase, f, g, 11, method);
 end
 
 function testSmoothCubicFunction(testCase)
+    runBothMethods(testCase, @smoothCubicFunctionForMethod);
+end
+
+function smoothCubicFunctionForMethod(testCase, method)
     [f, g] = makeFunction(2);
-    checkDenoising(testCase, f, g, 22);
+    checkDenoising(testCase, f, g, 22, method);
 end
 
 function testSmoothSineFunction(testCase)
+    runBothMethods(testCase, @smoothSineFunctionForMethod);
+end
+
+function smoothSineFunctionForMethod(testCase, method)
     [f, g] = makeFunction(3);
-    checkDenoising(testCase, f, g, 33);
+    checkDenoising(testCase, f, g, 33, method);
 end
 
 function testFixedPointMatchesDirect(testCase)
@@ -76,6 +88,10 @@ function testFixedPointMatchesDirect(testCase)
 end
 
 function testDistanceWeightingFavorsNearbySamples(testCase)
+    runBothMethods(testCase, @distanceWeightingFavorsNearbySamplesForMethod);
+end
+
+function distanceWeightingFavorsNearbySamplesForMethod(testCase, method)
     % The function's slope is negative near zero and positive farther away.
     xSamples = [-2 -1 -0.1 -0.05 -0.02 -0.01 ...
         0.01 0.02 0.05 0.1 1 2 0];
@@ -85,7 +101,7 @@ function testDistanceWeightingFavorsNearbySamples(testCase)
     evals.F = f(xSamples);
     evals.G = g(xSamples);
 
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
     d = denoise(0, f(0), g(0), 1, {evals}, 1, ...
         [], [], [], -inf, config, weights);
@@ -105,6 +121,10 @@ function testDistanceWeightingFavorsNearbySamples(testCase)
 end
 
 function testAscentCorrectionOppositeDirection(testCase)
+    runBothMethods(testCase, @ascentCorrectionOppositeDirectionForMethod);
+end
+
+function ascentCorrectionOppositeDirectionForMethod(testCase, method)
     % Same 1-D data: the model direction +1 is opposite to g(0) = -1, so
     % there is no plane to rotate in and the correction returns g/|g|.
     xSamples = [-2 -1 -0.1 -0.05 -0.02 -0.01 ...
@@ -112,13 +132,17 @@ function testAscentCorrectionOppositeDirection(testCase)
     f = @(x) x.^3 - x;
     g = @(x) 3 * x.^2 - 1;
     evals = struct('X', xSamples, 'F', f(xSamples), 'G', g(xSamples));
-    config = struct('fixed_or_exact', 1, 'denoise_distance_weight_scale', 1000);
+    config = struct('fixed_or_exact', method, 'denoise_distance_weight_scale', 1000);
     weights = struct('w_xi', 1, 'wbar_xi', 1);
     d = denoise(0, f(0), g(0), 1, {evals}, 1, [], [], [], -inf, config, weights);
     verifyEqual(testCase, d, -1, 'AbsTol', 1e-12);
 end
 
 function testAscentCorrectionExactAngle(testCase)
+    runBothMethods(testCase, @ascentCorrectionExactAngleForMethod);
+end
+
+function ascentCorrectionExactAngleForMethod(testCase, method)
     % 2-D linear function with gradient [1; 0] at every sample, but the
     % current (noisy) gradient is [-1; 0.5]: the model direction is not an
     % ascent direction for it and must be rotated to cos(angle) = minCos.
@@ -129,7 +153,7 @@ function testAscentCorrectionExactAngle(testCase)
     gNoisy = [-1; 0.5];
     weights = struct('w_xi', 1, 'wbar_xi', 1);
     for minCos = [1e-7 0.1 0.5]
-        config = struct('fixed_or_exact', 1, 'denoise_min_cos_angle', minCos);
+        config = struct('fixed_or_exact', method, 'denoise_min_cos_angle', minCos);
         d = denoise(x, 0, gNoisy, eye(2), {evals}, 2, [], [], [], -inf(2, 1), ...
             config, weights);
         cosAngle = gNoisy' * d / (norm(gNoisy) * norm(d));
@@ -139,6 +163,10 @@ function testAscentCorrectionExactAngle(testCase)
 end
 
 function testInsufficientSamples(testCase)
+    runBothMethods(testCase, @insufficientSamplesForMethod);
+end
+
+function insufficientSamplesForMethod(testCase, method)
     % Endast en mätpunkt i två dimensioner
     x = [0.5; 0.3];
     f = 2;
@@ -151,7 +179,7 @@ function testInsufficientSamples(testCase)
     B = eye(2);
     xLbd = -inf(2, 1);
 
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
     [diagnostics, d] = evalc(['denoise(x, f, g, B, {evals}, 2, ' ...
@@ -164,6 +192,10 @@ function testInsufficientSamples(testCase)
 end
 
 function testRegularizesWhenSpreadCheckCannotFixBasis(testCase)
+    runBothMethods(testCase, @regularizesWhenSpreadCheckCannotFixBasisForMethod);
+end
+
+function regularizesWhenSpreadCheckCannotFixBasisForMethod(testCase, method)
     X = [0 1;
          0 1];
     f = @(x) -(x(1)-1)^2 - x(2)^2;
@@ -178,7 +210,7 @@ function testRegularizesWhenSpreadCheckCannotFixBasis(testCase)
     evals.X = X;
     evals.F = F;
     evals.G = G;
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     config.denoise_check_spread = true;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
@@ -192,6 +224,10 @@ function testRegularizesWhenSpreadCheckCannotFixBasis(testCase)
 end
 
 function testDenoiseRespectsLowerBounds(testCase)
+    runBothMethods(testCase, @denoiseRespectsLowerBoundsForMethod);
+end
+
+function denoiseRespectsLowerBoundsForMethod(testCase, method)
     % Startpunkt nära undre gränsen
     x = [0.1; 0];
     xLbd = [0; -inf];
@@ -216,7 +252,7 @@ function testDenoiseRespectsLowerBounds(testCase)
     evals.F = F;
     evals.G = G;
 
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
     d = denoise(x, f(x), g(x), eye(2), {evals}, 2, ...
@@ -234,6 +270,10 @@ function testDenoiseRespectsLowerBounds(testCase)
 end
 
 function testCollinearSamples(testCase)
+    runBothMethods(testCase, @collinearSamplesForMethod);
+end
+
+function collinearSamplesForMethod(testCase, method)
     % Flera mätpunkter, men alla ligger på samma linje
     X = [-2 -1 0 1 2;
           0  0 0 0 0];
@@ -254,7 +294,7 @@ function testCollinearSamples(testCase)
     evals.G = G;
 
     x = X(:, end);
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     config.denoise_check_spread = true;
     config.denoise_spread_removal_method = 0;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
@@ -292,6 +332,10 @@ function testCollinearSamples(testCase)
 end
 
 function testPoorSpreadIsKeptWhenOriginalSbarIsWellConditioned(testCase)
+    runBothMethods(testCase, @poorSpreadIsKeptWhenOriginalSbarIsWellConditionedForMethod);
+end
+
+function poorSpreadIsKeptWhenOriginalSbarIsWellConditionedForMethod(testCase, method)
     % The second direction has little spread, but the original S_bar is
     % well-conditioned, so the spread filter should not remove it.
     X = [-2 -1 0 1 2;
@@ -309,7 +353,7 @@ function testPoorSpreadIsKeptWhenOriginalSbarIsWellConditioned(testCase)
     evals.X = X;
     evals.F = F;
     evals.G = G;
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
     [diagnostics, d] = evalc(['denoise(X(:, end), F(end), G(:, end), ' ...
@@ -322,6 +366,10 @@ function testPoorSpreadIsKeptWhenOriginalSbarIsWellConditioned(testCase)
 end
 
 function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
+    runBothMethods(testCase, @illConditionedModelContinuesWithOrWithoutSpreadCheckForMethod);
+end
+
+function illConditionedModelContinuesWithOrWithoutSpreadCheckForMethod(testCase, method)
     X = [-2 -1 0 1 2;
          0.3 * [-2 -1 0 1 2] + 1e-7 * [0 1 -1 1 0]];
 
@@ -337,7 +385,7 @@ function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
     evals.X = X;
     evals.F = F;
     evals.G = G;
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     config.denoise_check_spread = false;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
@@ -346,7 +394,11 @@ function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
         'eye(2), {evals}, 2, [], [], [], -inf(2, 1), config, weights)']);
     [~, warningId] = lastwarn;
 
-    verifyEmpty(testCase, warningId);
+    if method == 0
+        verifyEqual(testCase, warningId, 'fixed_point:noConvergence');
+    else
+        verifyEmpty(testCase, warningId);
+    end
     verifyTrue(testCase, contains(diagnostics, ...
         'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned; regularization applied: no.'));
     verifyTrue(testCase, all(isfinite(d)));
@@ -358,7 +410,11 @@ function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
         'eye(2), {evals}, 2, [], [], [], -inf(2, 1), config, weights)']);
     [~, warningId] = lastwarn;
 
-    verifyEmpty(testCase, warningId);
+    if method == 0
+        verifyEqual(testCase, warningId, 'fixed_point:noConvergence');
+    else
+        verifyEmpty(testCase, warningId);
+    end
     verifyTrue(testCase, contains(diagnostics, ...
         'Using 2 of 2 dimensions (0 removed); S_bar is ill-conditioned; regularization applied: no.'));
     verifyTrue(testCase, all(isfinite(d)));
@@ -366,6 +422,10 @@ function testIllConditionedModelContinuesWithOrWithoutSpreadCheck(testCase)
 end
 
 function testMultipleEvaluationHistories(testCase)
+    runBothMethods(testCase, @multipleEvaluationHistoriesForMethod);
+end
+
+function multipleEvaluationHistoriesForMethod(testCase, method)
     % Kvadratisk målfunktion
     [f, g] = makeFunction(1);
 
@@ -395,7 +455,7 @@ function testMultipleEvaluationHistories(testCase)
     evals2.G = G(:, 5:8);
 
     x = X(:, end);
-    config.fixed_or_exact = 1;
+    config.fixed_or_exact = method;
     weights = struct('w_xi', 1, 'wbar_xi', 1);
 
     % Kör med en respektive två historikposter
@@ -417,7 +477,7 @@ function testMultipleEvaluationHistories(testCase)
         'AbsTol', 1e-10);
 end
 
-function checkDenoising(testCase, f, g, seed)
+function checkDenoising(testCase, f, g, seed, method)
 % Sample a small cloud around one point and add modest measurement noise.
     previousRng = rng;
     rngCleanup = onCleanup(@() rng(previousRng)); %#ok<NASGU>
@@ -458,7 +518,7 @@ function checkDenoising(testCase, f, g, seed)
     evals.G = noisyG;
     estimatedDirection = denoise(center, noisyF(end), noisyG(:, end), ...
         eye(2), {evals}, 2, [], [], [], -inf(2, 1), ...
-        struct('fixed_or_exact', 1), struct('w_xi', 1, 'wbar_xi', 1));
+        struct('fixed_or_exact', method), struct('w_xi', 1, 'wbar_xi', 1));
 
     trueDirection = trueGradient / norm(trueGradient);
     noisyCenterDirection = noisyG(:, end) / norm(noisyG(:, end));
@@ -470,6 +530,12 @@ function checkDenoising(testCase, f, g, seed)
 
     verifyLessThan(testCase, denoisedError, rawError);
     verifyLessThan(testCase, denoisedError, 0.25);
+end
+
+function runBothMethods(testCase, testFunction)
+    for method = [0, 1]
+        testFunction(testCase, method);
+    end
 end
 
 function [f, g] = makeFunction(whichFunction)
