@@ -201,15 +201,6 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
             end
         end
 
-        % Timer för varje startpunkt
-        elapsed = toc(runTimer);
-        hours = floor(elapsed / 3600);
-        minutes = floor(mod(elapsed, 3600) / 60);
-        seconds = mod(elapsed, 60);
-
-        fprintf('Run %d, iteration %d: %02d:%02d:%05.2f\n', runIndex, iter, hours, minutes, seconds);
-        %%
-
         if isequal(x, xStart)
             stalls = stalls + 1;
             if stalls >= 3
@@ -238,6 +229,14 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
     result.evalHist = evalHist;
     result.iterations = iter;
     result.degreeLogFile = degreeLog.file;
+
+    % Timer för varje startpunkt
+    elapsed = toc(runTimer);
+    hours = floor(elapsed / 3600);
+    minutes = floor(mod(elapsed, 3600) / 60);
+    seconds = mod(elapsed, 60);
+    fprintf('Run %d total time: %02d:%02d:%05.2f\n', runIndex, hours, minutes, seconds);
+
 end
 
 function stop = fulfills_stop_criterion(g, iter, maxIter)
