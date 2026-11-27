@@ -84,6 +84,10 @@ for k = 2:numStarts
     fprintf('\n');
 end
 
+% Progress per start point is saved after every iteration in
+% data/kalmanOptimizeProgress.mat, so plots can show it before the run is done.
+init_progress(numStarts, K, varInd, periods);
+
 results = cell(numStarts, 1);
 for k = 1:numStarts
     fprintf('\nStarting optimization run %d of %d\n', k, numStarts);
@@ -116,6 +120,7 @@ history.runObjectives = scores;
 history.runs = cellfun(@(r) struct('fvals', r.history.fvals, ...
     'normOfgrads', r.history.normOfgrads), results);
 save_result(bestResult.xFinal, varInd, data.K, periods, history);
+finish_progress(bestIndex);
 
 % Timer för hela körningen
 totalElapsed = toc(totalTimer);
@@ -140,6 +145,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
     if ~(isfinite(f) && all(isfinite(g)))
         % A perturbed start can give an invalid objective; skip that run.
         fprintf('Run %d: the start point gives a non-finite objective; skipped.\n', runIndex);
+        save_progress(runIndex, history, x, -Inf, true);
         result = struct('xInit', x0, 'xFinal', x0, 'fFinal', -Inf, 'gFinal', g, ...
             'history', history, 'evalHist', {{}}, 'iterations', 0, 'degreeLogFile', '');
         return;
@@ -153,6 +159,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
 
     while true
         history = update_history(history, x, f, g);
+        save_progress(runIndex, history, x, f, false);
 
         xStart = x;
         % Steepest descent if requested in the config; otherwise CG and denoising.
@@ -220,6 +227,7 @@ function result = run_single_start(x0, K, mu, varInd, xLbd, noisy_size, ...
     end
 
     history = update_history(history, x, f, g); % final point, so the plot ends at fFinal
+    save_progress(runIndex, history, x, f, true);
 
     result.xInit = x0;
     result.xFinal = x;
@@ -539,6 +547,69 @@ function save_result(x, varInd, K, periods, history)
     result.savedAt = datestr(now, 'yyyy-mm-dd HH:MM');
     save(dataPath('kalmanOptimizeResult.mat'), '-struct', 'result');
     fprintf('Saved the result in %s\n', dataPath('kalmanOptimizeResult.mat'));
+end
+
+function init_progress(numStarts, K, varInd, periods)
+% Starts data/kalmanOptimizeProgress.mat for this run. plots.m reads it
+% while finished is false, so the convergence of every start point can be
+% plotted before the run is done (or after it was stopped with Ctrl+C).
+
+    p.startedAt = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+    p.updatedAt = p.startedAt;
+    p.finished = false;
+    p.bestRunIndex = [];
+    p.numStarts = numStarts;
+    p.modelFile = periods.modelFile;
+    p.periods = periods;
+    p.varInd = varInd;
+    % Whole parameter vector with the start values; x of a run fills varInd
+    p.xBase = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    p.runs = repmat(struct('fvals', [], 'normOfgrads', [], 'x', [], 'f', NaN, ...
+                           'done', false), numStarts, 1);
+    write_progress(p);
+end
+
+function save_progress(runIndex, history, x, f, done)
+% Stores f and ||g|| per iteration and the current point of one start.
+% A failure to write never stops the optimization.
+
+    try
+        p = load(progress_file());
+        p.runs(runIndex).fvals = history.fvals;
+        p.runs(runIndex).normOfgrads = history.normOfgrads;
+        p.runs(runIndex).x = x;
+        p.runs(runIndex).f = f;
+        p.runs(runIndex).done = done;
+        p.updatedAt = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+        write_progress(p);
+    catch err
+        warning('kalmanrates:ProgressNotSaved', 'Progress not saved: %s', err.message);
+    end
+end
+
+function finish_progress(bestIndex)
+    try
+        p = load(progress_file());
+        p.finished = true;
+        p.bestRunIndex = bestIndex;
+        p.updatedAt = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+        write_progress(p);
+    catch err
+        warning('kalmanrates:ProgressNotSaved', 'Progress not saved: %s', err.message);
+    end
+end
+
+function write_progress(p)
+% Writes to a temporary file first, so that plots in another MATLAB never
+% reads a half-written file.
+    file = progress_file();
+    tmp = [file(1:end-4) '_tmp.mat'];
+    save(tmp, '-struct', 'p');
+    movefile(tmp, file, 'f');
+end
+
+function file = progress_file()
+    file = dataPath('kalmanOptimizeProgress.mat');
 end
 
 function [x, f, g] = update_step(xNew, fNew, gNew)

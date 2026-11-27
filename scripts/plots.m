@@ -5,7 +5,15 @@
 % Figure 2: market quotes and the model's one-day-ahead prediction for one day
 %           at a time (slider), and histograms of the daily error (RMSE) in the
 %           optimization period and the out-of-sample period.
-% Run kalmanOptimizeMain first; it saves data/kalmanOptimizeResult.mat.
+% Run kalmanOptimizeMain first; it saves data/kalmanOptimizeResult.mat when
+% it is done, and data/kalmanOptimizeProgress.mat after every iteration.
+%
+% While kalmanOptimizeMain is still running (also in another MATLAB), or
+% after it was stopped with Ctrl+C, the progress file is used: every start
+% point so far up to its latest iteration, and figure 2 with the best point
+% found so far. To choose yourself:
+%   plotsUseProgress = true;  plots   % always the progress file
+%   plotsUseProgress = false; plots   % always the finished result
 
 run(fullfile(fileparts(mfilename('fullpath')), '..', 'setupPaths.m'));
 if exist('kalmanOptimizeSweepPlotData', 'var')
@@ -14,25 +22,50 @@ if exist('kalmanOptimizeSweepPlotData', 'var')
 end
 burnIn = 20; % First filter days left out of the histograms (start-up transient)
 
-R = load(dataPath('kalmanOptimizeResult.mat'));
-h = R.history;
-if isfield(h, 'runs')
-    runs = h.runs;
-    best = h.bestRunIndex;
-else % result saved before multistart: one run
-    runs = struct('fvals', h.fvals, 'normOfgrads', h.normOfgrads);
-    best = 1;
+progressFile = dataPath('kalmanOptimizeProgress.mat');
+if exist('plotsUseProgress', 'var') && ~isempty(plotsUseProgress)
+    fromProgress = logical(plotsUseProgress);
+else % the progress file when a run is not finished
+    fromProgress = false;
+    if isfile(progressFile)
+        progressState = load(progressFile, 'finished');
+        fromProgress = ~progressState.finished;
+    end
 end
 
+if fromProgress
+    [R, runs, best, status] = load_progress(progressFile);
+else
+    R = load(dataPath('kalmanOptimizeResult.mat'));
+    h = R.history;
+    if isfield(h, 'runs')
+        runs = h.runs;
+        best = h.bestRunIndex;
+    else % result saved before multistart: one run
+        runs = struct('fvals', h.fvals, 'normOfgrads', h.normOfgrads);
+        best = 1;
+    end
+    [runs.done] = deal(true);
+    status = sprintf('Klar körning, sparad %s', R.savedAt);
+end
+fprintf('%s\n', status);
+
 tl = tiledlayout(figure('Name', 'Konvergens'), 2, 1, 'TileSpacing', 'compact');
+title(tl, status);
 ax1 = nexttile(tl); hold(ax1, 'on');
 ax2 = nexttile(tl); hold(ax2, 'on');
 set(ax2, 'YScale', 'log');
 colors = lines(numel(runs));
 for k = 1:numel(runs)
+    if isempty(runs(k).fvals)
+        continue; % not started yet
+    end
     it = 0:numel(runs(k).fvals)-1;
     name = sprintf('start %d', k);
     width = 1;
+    if ~runs(k).done
+        name = [name ' (pågår)'];
+    end
     if k == best
         name = [name ' (bäst)'];
         width = 2.5;
@@ -47,6 +80,8 @@ ylabel(ax2, '||g||');
 xlabel(ax2, 'yttre iteration');
 grid(ax2, 'on');
 linkaxes([ax1 ax2], 'x');
+drawnow; % show the convergence now; the filter below takes a while
+fprintf('Ritar marknad mot modell (kör Kalmanfiltret över alla dagar, tar en stund)...\n');
 
 %% Market vs model per day
 [K, times, ricAll] = loadKalmanModel(R.modelFile);
@@ -84,6 +119,42 @@ addlistener(s, 'ContinuousValueChange', @(~, ~) drawDay(axC, d, round(s.Value)))
 drawDay(axC, d, burnIn+1);
 
 %% ------------------------------ Functions -------------------------------
+
+function [R, runs, best, status] = load_progress(file)
+% The progress of kalmanOptimizeMain as the fields plots needs from
+% kalmanOptimizeResult.mat. The best run is the one with the highest
+% objective so far (or the one kalmanOptimizeMain chose when finished).
+  if ~isfile(file)
+    error('kalmanrates:MissingResult', '%s does not exist. Run kalmanOptimizeMain first.', file);
+  end
+  P = load(file);
+  runs = P.runs;
+  started = find(arrayfun(@(r) ~isempty(r.fvals), runs));
+  if isempty(started)
+    error('kalmanrates:MissingResult', 'No start point has finished an iteration yet.');
+  end
+  if P.finished && ~isempty(P.bestRunIndex)
+    best = P.bestRunIndex;
+  else
+    fNow = arrayfun(@(r) r.f, runs(started));
+    fNow(~isfinite(fNow)) = -Inf;
+    [~, i] = max(fNow);
+    best = started(i);
+  end
+  R.modelFile = P.modelFile;
+  R.periods = P.periods;
+  R.xOpt = P.xBase;
+  R.xOpt(P.varInd) = runs(best).x;
+  nDone = nnz([runs.done]);
+  if P.finished
+    state = 'klar';
+  else
+    state = 'pågår eller avbruten';
+  end
+  status = sprintf(['Progress (%s): %d av %d startpunkter klara, startad %s, ' ...
+                    'uppdaterad %s, bäst hittills start %d (f = %.8g)'], state, nDone, ...
+                   P.numStarts, P.startedAt, P.updatedAt, best, runs(best).f);
+end
 
 function drawDay(ax, d, t)
   have = ~isnan(d.z(t,:));
