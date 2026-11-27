@@ -29,6 +29,13 @@ function r = innovationsLOO(KS, paramVec, opts)
 %                      and the day should be looked at by hand.
 %     protected        1 x nu logical, contracts that are never removed
 %                      (e.g. the overnight fixing). Default none.
+%     rScale           1 x nu, the threshold is applied to |rLOO_i|/rScale_i.
+%                      Default ones (rLOO is assumed N(0,1)). flagQuotes
+%                      sets it to the robust spread of rLOO per contract,
+%                      so that uncalibrated parameters can be used.
+%     burnIn           no quote is removed on the first burnIn days, while
+%                      the state is still settling from ax and Sigma0.
+%                      Default 0.
 %
 %   r has, per day t and contract i (NaN where the contract has no quote):
 %     z, pred      observed quote and one-step-ahead prediction
@@ -51,6 +58,12 @@ function r = innovationsLOO(KS, paramVec, opts)
     error('kalmanrates:InvalidOption', 'protected must have one element per contract (%d).', KS.nu);
   end
   protected = logical(protected(:)');
+  rScale = getOpt(opts, 'rScale', ones(1, KS.nu));
+  if numel(rScale) ~= KS.nu || any(~(rScale(:) > 0))
+    error('kalmanrates:InvalidOption', 'rScale must have one positive element per contract (%d).', KS.nu);
+  end
+  rScale = rScale(:)';
+  burnIn = getOpt(opts, 'burnIn', 0);
 
   thetaFInd = (1:length(KS.thetaF));
   SigmavInd = (1:length(KS.Sigmav)) + thetaFInd(end);
@@ -80,6 +93,8 @@ function r = innovationsLOO(KS, paramVec, opts)
   r.f = zeros(nt,1); r.d2 = zeros(nt,1);
   r.threshold = threshold;
   r.maxFlagFraction = maxFlagFraction;
+  r.rScale = rScale;
+  r.burnIn = burnIn;
 
   for t = 1:nt
     F  = sparse(KS.A{t}*diag(thetaF)*KS.B{t});
@@ -125,10 +140,10 @@ function r = innovationsLOO(KS, paramVec, opts)
         r.rLOO(t, contract) = rl;
         first = false;
       end
-      cand = abs(rl);
+      cand = abs(rl) ./ rScale(contract(idx))';
       cand(protected(contract(idx))) = -Inf;
       [m, j] = max(cand);
-      if isempty(m) || m <= threshold || numel(idx) <= 1
+      if t <= burnIn || isempty(m) || m <= threshold || numel(idx) <= 1
         break;
       end
       if nz - numel(idx) >= maxRemove

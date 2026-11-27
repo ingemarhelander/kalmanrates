@@ -31,7 +31,7 @@ noisy_size = config.noisy_size; % Dimension of noisy subspace
 plotLive = isfield(config, 'plot_live') && config.plot_live ~= 0;
 periods = experimentPeriods(config); % In-sample, optimization and out-of-sample periods
 
-[K, varInd, xLbd, x, data] = setup_problem(periods);
+[K, varInd, xLbd, x, data] = setup_problem(periods, config);
 lineSearchFcn = select_line_search(config); % Line search method and its options
 
 % Multistart settings; missing rows give a single run from the usual start.
@@ -96,7 +96,16 @@ if ~isempty(periods.outOfSampleStart)
     history.outOfSample = evaluateOutOfSample( ...
         data.K, data.times, bestResult.xFinal, varInd, periods);
     print_out_of_sample(history.outOfSample);
+    if ~isempty(data.prefilter)
+        % The same parameters on the raw quotes, so that the result can be
+        % compared with a run without prefilter on the same data.
+        history.outOfSampleRaw = evaluateOutOfSample( ...
+            data.KRaw, data.times, bestResult.xFinal, varInd, periods);
+        fprintf('\nThe same parameters on the raw quotes (before the prefilter):');
+        print_out_of_sample(history.outOfSampleRaw);
+    end
 end
+history.prefilter = data.prefilter;
 history.bestRunIndex = bestIndex;
 history.runObjectives = scores;
 % f and ||g|| per iteration for every start, for the convergence plot in plots.m
@@ -351,11 +360,12 @@ end
 
 %% Help function given by Jörgen.
 
-function [K, varInd, xLbd, x, data] = setup_problem(periods)
+function [K, varInd, xLbd, x, data] = setup_problem(periods, config)
 % Loads the model for the periods, sets the starting point, selects which
 % variables to optimize and builds the lower bounds for them. K holds the
 % optimization days; data holds the whole model for the out-of-sample
-% evaluation.
+% evaluation. With prefilter in the config the deviating quotes are removed
+% first (see prefilter_quotes); data.KRaw is then the model before that.
 
     [K, times, ricAll, KI] = loadKalmanModel(periods.modelFile);
     check_model_periods(KI, periods);
@@ -395,6 +405,15 @@ function [K, varInd, xLbd, x, data] = setup_problem(periods)
             fprintf('Start point: kalmanXoptAll.mat\n');
     end
 
+    % Prefilter: flag the quotes that deviate on their own with the start
+    % parameters and remove them before anything else uses the model
+    optimizeIdx = selectDays(times, periods.optimizeStart, periods.optimizeEnd);
+    KRaw = K;
+    prefilter = [];
+    if isfield(config, 'prefilter') && config.prefilter
+        [K, prefilter] = prefilter_quotes(K, times, ricAll, optimizeIdx, config);
+    end
+
     % Which variables to optimize
     optCase = 9;
     switch optCase
@@ -412,7 +431,6 @@ function [K, varInd, xLbd, x, data] = setup_problem(periods)
     % Contracts without quotes on the optimization days do not affect the
     % likelihood, so their parameters are not optimized (the mu penalty
     % alone would otherwise push them up without bound).
-    optimizeIdx = selectDays(times, periods.optimizeStart, periods.optimizeEnd);
     quoted = false(1, K.nu);
     for t = optimizeIdx
         quoted = quoted | full(any(K.Iz{t}, 1));
@@ -436,10 +454,65 @@ function [K, varInd, xLbd, x, data] = setup_problem(periods)
 
     % Keep the whole model (now holding the start parameters) for the
     % out-of-sample evaluation
-    data = struct('K', K, 'times', times);
+    data = struct('K', K, 'times', times, 'KRaw', KRaw);
+    data.prefilter = prefilter;
     K = subsetKalmanModel(K, optimizeIdx);
     fprintf('Optimization data: %d days, %s to %s\n', numel(optimizeIdx), ...
             datestr(floor(times(optimizeIdx(1))), 'yyyy-mm-dd'), datestr(floor(times(optimizeIdx(end))), 'yyyy-mm-dd'));
+end
+
+function [K, info] = prefilter_quotes(K, times, ricAll, optimizeIdx, config)
+% Runs the Kalman filter once with the start parameters, from the first
+% optimization day to the last day of the model, flags the quotes that
+% deviate on their own (flagQuotes) and returns the model without them.
+% Only the flags are used from this run. The spread that the threshold is
+% relative to is measured on the optimization days only. The overnight
+% fixing (IBOR) is never removed.
+
+    opts.scale           = cfg(config, 'prefilter_scale', 'robust');
+    opts.threshold       = cfg(config, 'prefilter_threshold', 4);
+    opts.maxFlagFraction = cfg(config, 'prefilter_maxFlagFraction', 0.2);
+    opts.burnIn          = cfg(config, 'prefilter_burnIn', 20);
+
+    days = optimizeIdx(1):K.nt;
+    opts.scaleDays = days <= optimizeIdx(end);
+    opts.protected = false(1, K.nu);
+    for t = days
+        [row, col] = find(K.Iz{t});
+        isIbor = K.atAll{t}(row) == K.pl.atIBOR;
+        opts.protected(col(isIbor)) = true;
+    end
+
+    xStart = [K.thetaF ; K.Sigmav ; K.Sigmaw ; K.ax ; K.Sigma0 ; K.Ef(:)];
+    fprintf('\nPrefilter (%s, threshold %g, burn-in %d days) on %d days...\n', ...
+            opts.scale, opts.threshold, opts.burnIn, numel(days));
+    [flag, r] = flagQuotes(K, xStart, days, opts);
+    K = removeQuotes(K, flag);
+
+    nObs = sum(r.nz);
+    nFlag = nnz(flag);
+    inOpt = false(K.nt, 1); inOpt(optimizeIdx) = true;
+    fprintf('Removed %d of %d quotes (%.3f %%) on %d days; %d on the optimization days\n', ...
+            nFlag, nObs, 100*nFlag/nObs, nnz(any(flag, 2)), nnz(flag(inOpt, :)));
+    if any(r.capped)
+        fprintf('Days that reached maxFlagFraction (look at them by hand): %s\n', ...
+                strjoin(cellstr(datestr(floor(times(days(r.capped))), 'yyyy-mm-dd')), ', '));
+    end
+    perContract = sum(flag, 1);
+    [n, order] = sort(perContract, 'descend');
+    top = order(n > 0);
+    top = top(1:min(5, numel(top)));
+    if ~isempty(top)
+        fprintf('Most removed: %s\n', strjoin(arrayfun(@(i) sprintf('%
+
+end
+
+function v = cfg(config, name, default)
+    if isfield(config, name)
+        v = config.(name);
+    else
+        v = default;
+    end
 end
 
 function check_model_periods(KI, periods)
