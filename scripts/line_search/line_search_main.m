@@ -47,7 +47,7 @@ function [alpha, xNew, fNew, gNew, evals] = line_search_main(x, f, g, d, K, mu, 
 %            q (vald grad), tHat (polynomets max i t)
 %
 % opts (valfri, ls_-raderna i kalmanOptimizeMain.config). 
-%   maxMethod ('newton') hur polynomets maximum hittas. grid: find_step_length
+%   maxMethod ('grid') hur polynomets maximum hittas. grid: find_step_length
 %                     (stega med h, mittpunkten i steget där p' byter tecken).
 %                     newton: find_step_length_newton (p' i nGrid punkter,
 %                     sedan Newton-Raphson på p' = 0).
@@ -302,7 +302,7 @@ function opts = default_opts(opts)
     % Samma värden som ls_-raderna i kalmanOptimizeMain.config
     def = struct('h', 1e-3, 'dMin', 5e-8, 'c', 0.05, 'maxEvals', 25, ...
                  'alphaMin', 1e-10, 'minEvals', 1, 'showDegree', 0, 'saveFits', 0, ...
-                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxMethod', 'newton', 'nGrid', 50);
+                 'shrinkAlphaMax', 1, 'verbose', 0, 'maxMethod', 'grid', 'nGrid', 50);
     unknown = setdiff(fieldnames(opts), fieldnames(def));
     if ~isempty(unknown)
         error('Okänd parameter för linjesökningen: %s', strjoin(unknown, ', '));
